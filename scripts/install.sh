@@ -14,12 +14,15 @@ gh extension list 2>/dev/null | grep -q gh-webhook || gh extension install cli/g
 npm install --silent
 npm run build >/dev/null
 
-if [ -w /usr/local/bin ]; then BIN=/usr/local/bin; else BIN="$HOME/.local/bin"; mkdir -p "$BIN"; fi
+# Override with PR_CHANNEL_BIN_DIR to install somewhere else.
+if [ -n "${PR_CHANNEL_BIN_DIR:-}" ]; then BIN="$PR_CHANNEL_BIN_DIR"; mkdir -p "$BIN"
+elif [ -w /usr/local/bin ]; then BIN=/usr/local/bin
+else BIN="$HOME/.local/bin"; mkdir -p "$BIN"; fi
 ln -sf "$ROOT/bin/pr-channel" "$BIN/pr-channel"
 echo "installed $BIN/pr-channel"
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "  note: $BIN is not on PATH — add it to your shell profile" ;; esac
 
-SKILL_DIR="$HOME/.claude/skills/pr-channel"
+SKILL_DIR="${PR_CHANNEL_SKILL_DIR:-$HOME/.claude/skills}/pr-channel"
 mkdir -p "$SKILL_DIR"
 cp "$ROOT/skills/pr-channel/SKILL.md" "$SKILL_DIR/SKILL.md"
 echo "installed $SKILL_DIR/SKILL.md"

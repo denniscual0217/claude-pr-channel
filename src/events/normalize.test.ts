@@ -467,7 +467,7 @@ describe('self-authored replies', () => {
     const events = normalizeWebhookAll('issue_comment', {
       action: 'created',
       issue: { number: 42, pull_request: {} },
-      comment: { id: 1, body: '**Claude:** Fixed and pushed.', user: { login: 'denniscual0217' } },
+      comment: { id: 1, body: '**Claude:** Fixed and pushed.', user: { login: 'sam-reviewer' } },
       repository: { full_name: 'acme-labs/widget-service' },
     });
 
@@ -489,7 +489,7 @@ describe('self-authored replies', () => {
     const events = normalizeWebhookAll('pull_request_review', {
       action: 'submitted',
       pull_request: { number: 42, head: { sha: 'a'.repeat(40) } },
-      review: { id: 3, body: '**Claude:** looks good', state: 'commented', user: { login: 'denniscual0217' } },
+      review: { id: 3, body: '**Claude:** looks good', state: 'commented', user: { login: 'sam-reviewer' } },
       repository: { full_name: 'acme-labs/widget-service' },
     });
 
@@ -536,7 +536,7 @@ describe('noise filtering', () => {
 });
 
 describe('comment author allowlist', () => {
-  const authors = new Set(['denniscual0217']);
+  const authors = new Set(['sam-reviewer']);
 
   // Anyone can write on a PR and acting on a comment means pushing code, so an
   // unlisted author's comment waits for a human instead of driving the session.
@@ -553,7 +553,7 @@ describe('comment author allowlist', () => {
     expect(normalizeWebhookAll('issue_comment', {
       action: 'created',
       issue: { number: 42, pull_request: {} },
-      comment: { id: 2, body: 'please fix', user: { login: 'DennisCual0217', type: 'User' } },
+      comment: { id: 2, body: 'please fix', user: { login: 'Sam-Reviewer', type: 'User' } },
       repository: { full_name: 'acme-labs/widget-service' },
     }, { commentAuthors: authors })).toHaveLength(1);
   });
