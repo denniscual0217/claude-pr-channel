@@ -53,7 +53,9 @@ else
     kill "$(cat "$DISPATCHER_PID")" 2>/dev/null || true
     sleep 1
   fi
-  node dist/index.js > "$RUN_DIR/dispatcher.log" 2>&1 &
+  # setsid: delivery must outlive whatever started it. As a child of the calling shell
+  # it dies when that session exits or its process group is reaped, and nothing says so.
+  setsid nohup node dist/index.js > "$RUN_DIR/dispatcher.log" 2>&1 < /dev/null &
   echo "$!" > "$DISPATCHER_PID"
   printf '%s\n' "${REPOS[@]}" > "$RUN_DIR/allowlist"
   sleep 2
@@ -65,7 +67,7 @@ if alive "$FORWARDER_PID"; then
   echo "already forwarding $REPO"
 else
   [ -f "$FORWARDER_PID" ] && echo "forwarder for $REPO was down; restarting"
-  "$ROOT/scripts/forwarder.sh" "$REPO" "$PORT" &
+  setsid nohup "$ROOT/scripts/forwarder.sh" "$REPO" "$PORT" >> "$RUN_DIR/forward-$(slug "$REPO").log" 2>&1 < /dev/null &
   echo "$!" > "$FORWARDER_PID"
   sleep 5
   alive "$FORWARDER_PID" && echo "forwarding $REPO" || echo "forwarder for $REPO failed to start; see $RUN_DIR/forward-$(slug "$REPO").log" >&2
