@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Single entry point, so nothing that uses this tool needs to know where it is installed.
+#
+#   pr-channel up <owner/repo>        start the dispatcher and forward that repo's webhook
+#   pr-channel register ...           bind a session to a PR
+#   pr-channel deregister ...         release one PR
+#   pr-channel status ...             show routes
+#   pr-channel stop                   stop everything and remove the webhooks it created
+set -euo pipefail
+
+SELF="${BASH_SOURCE[0]}"
+while [ -L "$SELF" ]; do
+  DIR="$(cd -P "$(dirname "$SELF")" && pwd)"
+  SELF="$(readlink "$SELF")"
+  [[ $SELF == /* ]] || SELF="$DIR/$SELF"
+done
+ROOT="$(cd -P "$(dirname "$SELF")/.." && pwd)"
+
+[ -f "$ROOT/dist/cli.js" ] || (cd "$ROOT" && npm run build >/dev/null)
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  up)    exec "$ROOT/scripts/pr-channel-up.sh" "$@" ;;
+  stop)  exec "$ROOT/scripts/stop-local.sh" "$@" ;;
+  ""|-h|--help|help) exec node "$ROOT/dist/cli.js" --help ;;
+  *)     exec node "$ROOT/dist/cli.js" "$cmd" "$@" ;;
+esac

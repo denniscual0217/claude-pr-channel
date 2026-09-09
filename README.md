@@ -85,11 +85,26 @@ node dist/cli.js register --repo owner/name --pr 42 \
 Every CLI command prints one JSON line on stdout. Exit codes: `0` done, `1` refused (route
 conflict, session mismatch, unknown route), `2` usage or configuration error.
 
+## Installing on a machine
+
+```
+git clone <this repo> claude-pr-channel && cd claude-pr-channel
+./scripts/install.sh
+```
+
+Checks the prerequisites, builds, puts `pr-channel` on PATH, and installs the Claude Code
+skill into `~/.claude/skills/pr-channel/`. Re-run it after pulling to update both.
+
+Requirements: **Node 24+** (the store uses `node:sqlite`), the **GitHub CLI** logged in,
+and **admin on the repo** you point it at, since forwarding creates a webhook.
+
+Nothing machine-specific is committed: the database, the webhook secret and the run
+state all live in `~/.claude-pr-channel/`, outside the repo.
+
 ## Using it on a repo
 
 ```
-cd /root/claude-pr-channel
-./scripts/start-local.sh owner/your-repo          # add more repos as extra arguments
+pr-channel up owner/your-repo
 ```
 
 That builds, starts the dispatcher on 127.0.0.1, and forwards that repo's real webhook
@@ -98,12 +113,11 @@ your own GitHub login and prints the configuration it used.
 
 Add your project's test command so the session can verify before it claims a pass:
 
-```
-PR_CHANNEL_ALLOWED_TOOLS='Bash(gh *),Bash(git *),Bash(npm *)' \
-  ./scripts/start-local.sh owner/your-repo
-```
+Stop everything with `pr-channel stop`: it releases every route, kills the processes and
+removes the webhooks it created. Logs are under `~/.claude-pr-channel/`.
 
-Stop it with `./scripts/stop-local.sh`. Logs are under `~/.claude-pr-channel/`.
+In practice you rarely run either by hand — `/pr-channel <number>` in a session does the
+bring-up itself.
 
 ## Subscribing a session to a PR
 
