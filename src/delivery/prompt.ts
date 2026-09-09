@@ -147,15 +147,17 @@ function body(envelope: EventEnvelope): string[] {
       return [
         `Build Temploy Image on ${where} is ${describeState(event.state)} for head ${event.headSha} ` +
           `(run ${event.workflowRunId}, attempt ${event.runAttempt}).`,
-        needsAttention(event.state)
-          ? respond([
-              `Get the failure output: gh run view ${event.workflowRunId} --repo ${repo} --log-failed`,
-              'Fix the cause, then commit and push.',
-              `Report what you changed as a TOP-LEVEL comment: ${conversationReply(event.prRef)}`,
-              ...linkBack(event.htmlUrl),
-              'If the build failure is not caused by this PR, say so there.',
-            ])
-          : 'No action needed unless it blocks your current step.',
+        event.state.status === 'completed' && event.state.conclusion === 'success'
+          ? [
+              'The image for this head is built and available.',
+              'If your work has a step that needs the Temploy image — verifying the change in',
+              'the deployed environment, for instance — this is the signal to do it now.',
+              'Otherwise carry on; no comment is expected for a build result.',
+            ].join('\n')
+          : [
+              'Do not chase this. A Temploy build failing is not this session\'s job, and it',
+              'does not mean the code in this PR is wrong. Carry on with what you were doing.',
+            ].join('\n'),
       ];
 
     case 'pr_lifecycle':

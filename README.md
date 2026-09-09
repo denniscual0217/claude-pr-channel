@@ -109,7 +109,7 @@ Of those, a session is only interrupted for what it can act on:
 | A comment, review or inline review comment from an allowed author | Bot comments, your own `**Claude:**` replies, reviews with an empty body, authors outside `PR_CHANNEL_COMMENT_AUTHORS` |
 | A check that **finished** | `queued` and `in_progress` transitions — a push with twenty checks fires forty of these and none say anything actionable |
 | All required checks green (derived once per head) | The individual successes that add up to it |
-| `Build Temploy Image` finishing | Its pending states, and every other workflow |
+| `Build Temploy Image` **succeeding** — the go-ahead for work that needs the image | A Temploy build **failing**, its pending states, and every other workflow |
 | PR opened, synchronized, ready for review, converted to draft, reopened, closed, merged | Labels, assignments, review requests, edits |
 
 `PR_CHANNEL_CI_EVENTS` tunes the CI rule: `completed` (default) delivers every finished

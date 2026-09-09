@@ -150,6 +150,28 @@ describe('worthWaking', () => {
     expect(worthWaking(check({ status: 'queued' }), 'all')).toBe(true);
   });
 
+  function temploy(conclusion: string): EnvelopeOf<'temploy_workflow'> {
+    const base = comment('s1', 'x');
+    return {
+      ...base,
+      kind: 'temploy_workflow',
+      payload: {
+        kind: 'temploy_workflow', prRef: pr, headSha: 'a'.repeat(40), actorLogin: null,
+        occurredAtIso: '2026-09-09T10:00:00.000Z', htmlUrl: null,
+        workflowRunId: 9, runAttempt: 1, state: { status: 'completed', conclusion },
+      },
+    } as EnvelopeOf<'temploy_workflow'>;
+  }
+
+  // A successful image is the signal that image-dependent work can start. A failed
+  // Temploy build is not this session's to chase, so it never interrupts.
+  it('wakes for a built Temploy image but not a failed one', () => {
+    expect(worthWaking(temploy('success'), 'completed')).toBe(true);
+    expect(worthWaking(temploy('failure'), 'completed')).toBe(false);
+    expect(worthWaking(temploy('failure'), 'failures')).toBe(false);
+    expect(worthWaking(temploy('failure'), 'all')).toBe(true);
+  });
+
   it('never suppresses a comment, review or lifecycle event', () => {
     for (const mode of ['failures', 'completed', 'all'] as const) {
       expect(worthWaking(comment('s1', 'please fix'), mode)).toBe(true);

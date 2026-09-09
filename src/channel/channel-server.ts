@@ -1,5 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { CheckState, EventEnvelope, TemployWorkflowState } from '../types.js';
+import { isGreen } from '../types.js';
 import { renderEventPrompt } from '../delivery/prompt.js';
 import type { SessionQueue } from './queue.js';
 
@@ -60,9 +61,11 @@ export function worthWaking(envelope: EventEnvelope, ciEvents: CiEvents): boolea
     if (ciEvents === 'completed') return event.state.status === 'completed';
     return finishedBadly(event.state);
   }
-  // One workflow rather than dozens, but its pending states say nothing either.
+  // Only a successful image is worth a turn: it is the signal that follow-on work
+  // depending on the deployed image can start. A Temploy build failure is not this
+  // session's to chase, so it never interrupts.
   if (event.kind === 'temploy_workflow') {
-    return ciEvents === 'all' || event.state.status === 'completed';
+    return ciEvents === 'all' || isGreen(event.state);
   }
   return true;
 }

@@ -206,6 +206,28 @@ describe('renderEventPrompt', () => {
     expect(prompt).toContain('/comments/12/replies');
   });
 
+  it('treats a built Temploy image as a go-ahead, not a notification', () => {
+    const prompt = renderEventPrompt(
+      envelope('temploy_workflow', {
+        workflowRunId: 9, runAttempt: 1, state: { status: 'completed', conclusion: 'success' },
+      }),
+    );
+
+    expect(prompt).toContain('built and available');
+    expect(prompt).toContain('this is the signal to do it now');
+  });
+
+  it('tells the session to leave a failed Temploy build alone', () => {
+    const prompt = renderEventPrompt(
+      envelope('temploy_workflow', {
+        workflowRunId: 9, runAttempt: 1, state: { status: 'completed', conclusion: 'failure' },
+      }),
+    );
+
+    expect(prompt).toContain('Do not chase this');
+    expect(prompt).not.toContain('--log-failed');
+  });
+
   it('tells the session to fix a failing check, not just report it', () => {
     const prompt = renderEventPrompt(
       envelope('ci_check', {
