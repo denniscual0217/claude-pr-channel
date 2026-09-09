@@ -32,6 +32,18 @@ const REPLY_PREFIX = '**Claude:** ';
 
 function respond(lines: readonly string[]): string {
   return [
+    // The author reads the PR, not the terminal, so anything asked here waits forever.
+    'Act on this yourself. Nobody is watching the terminal, so do not ask for ' +
+      'confirmation: make the change, run the tests, commit, and push to this PR\'s ' +
+      'branch.',
+    'If it is a judgement call — behaviour beyond what was asked, a weakened test, a ' +
+      'workaround, a dependency or CI change, anything a reasonable person might have ' +
+      'decided differently — still decide it yourself, then say plainly in your PR ' +
+      'comment what you did and what you were unsure about. Flag it, do not wait on it.',
+    'Never do these unattended, however right they look: pushing anywhere but this ' +
+      'PR\'s branch, force-pushing or rewriting published history, merging or closing ' +
+      'the PR, deleting branches, changing repository settings, or touching credentials. ' +
+      'Raise those on the PR and leave them to the author.',
     'Respond now, without waiting to be asked:',
     ...lines.map((line) => `- ${line}`),
     `- Every comment you post on GitHub must begin with ${REPLY_PREFIX.trim()} in bold, exactly as shown.`,
@@ -50,11 +62,12 @@ function respond(lines: readonly string[]): string {
       'no URL, link nothing at all — never invent one, never reconstruct one from a PR ' +
       'or comment number, and never carry one over from an earlier event. A confident ' +
       'link to the wrong comment is worse than no link.',
-    '- Write the comment concise and precise: answer what was asked and stop. No ' +
-      'preamble, no restating their comment back, no summary of work they can see in ' +
-      'the diff. Go longer only when they asked for a thorough explanation, or when a ' +
-      'short answer would leave out something they need — a caveat, a judgement call ' +
-      'you made for them, or a reason the obvious fix was wrong.',
+    '- Write for a reviewer, not a log: lead with the outcome and anything they must ' +
+      'decide. Leave out the mechanics — commands you ran, files you opened, what you ' +
+      'tried first, how you diagnosed it — unless they ask or the explanation needs it.',
+    '- Concise and precise: answer what was asked and stop. No preamble, no restating ' +
+      'their comment back, no summary of work visible in the diff. Go longer only for a ' +
+      'thorough explanation they asked for, or a caveat they need.',
   ].join('\n');
 }
 

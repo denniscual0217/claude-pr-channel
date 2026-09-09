@@ -122,11 +122,14 @@ describe('renderEventPrompt', () => {
       envelope('pr_comment', { action: 'created', commentId: 7, untrustedBody: untrusted('why?') }),
     );
 
-    expect(prompt).toContain('concise and precise');
+    expect(prompt).toContain('Concise and precise');
     expect(prompt).toContain('No preamble');
+    // A reviewer wants the outcome, not a transcript of how it was reached.
+    expect(prompt).toContain('Write for a reviewer, not a log');
+    expect(prompt).toContain('Leave out the mechanics');
     // Concise is the default, not a cap: a thorough answer is still allowed when asked
     // for, or when brevity would drop a caveat the reader needs.
-    expect(prompt).toContain('Go longer only when they asked for a thorough explanation');
+    expect(prompt).toContain('Go longer only for a thorough explanation they asked for');
   });
 
   it('links a top-level reply back to what it answers', () => {
@@ -277,5 +280,33 @@ describe('renderEventPrompt', () => {
     );
 
     expect(prompt).toContain('Do not reply to it');
+  });
+});
+
+describe('unattended work', () => {
+  // A permission prompt or a clarifying question in the terminal is never answered: the
+  // author reads the PR. Waiting there is the same as dropping the work.
+  it('tells the session to act without asking, and where to ask if it must', () => {
+    const prompt = renderEventPrompt(
+      envelope('pr_comment', { action: 'created', commentId: 7, untrustedBody: untrusted('fix this') }),
+    );
+
+    expect(prompt).toContain('Nobody is watching the terminal');
+    expect(prompt).toContain('do not ask for confirmation');
+    // A judgement call is acted on and flagged, not queued behind a question.
+    expect(prompt).toContain('Flag it, do not wait on it');
+  });
+
+  it('names the actions that are still worth stopping for', () => {
+    const prompt = renderEventPrompt(
+      envelope('ci_check', {
+        checkName: 'ci/test', checkRunId: 5,
+        state: { status: 'completed', conclusion: 'failure' }, detailsUrl: null,
+      }),
+    );
+
+    for (const guarded of ['force-pushing', 'merging or closing the PR', 'credentials']) {
+      expect(prompt).toContain(guarded);
+    }
   });
 });
