@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# Stop the dispatcher and forwarders, and remove the webhooks this tool created.
+# Stop everything, release every route, and remove the webhooks this tool created.
 set -euo pipefail
-RUN_DIR="${PR_CHANNEL_RUN_DIR:-$HOME/.claude-pr-channel}"
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUN_DIR="${PR_CHANNEL_RUN_DIR:-$HOME/.claude-pr-channel}"
 CLI="$ROOT/dist/cli.js"
 export PR_CHANNEL_DB_PATH="${PR_CHANNEL_DB_PATH:-$RUN_DIR/channel.db}"
 
-# Release every route before killing anything. A route outlives the processes, so a
-# session that ends here would otherwise hold its PR forever and the next session on
-# that PR would be refused with `conflict`.
+# Release routes first: a route outlives the processes, and the next session on that PR
+# would otherwise be refused with `conflict`.
 if [ -f "$CLI" ] && [ -f "$PR_CHANNEL_DB_PATH" ]; then
   node "$CLI" status 2>/dev/null \
     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{for(const r of (JSON.parse(s).openRoutes||[]))console.log(`${r.repo} ${r.prNumber} ${r.sessionId}`)}catch{}})' \
@@ -20,18 +18,35 @@ if [ -f "$CLI" ] && [ -f "$PR_CHANNEL_DB_PATH" ]; then
       done
 fi
 
-if [ -f "$RUN_DIR/pids" ]; then
-  while read -r pid; do kill "$pid" 2>/dev/null || true; done < "$RUN_DIR/pids"
-  rm -f "$RUN_DIR/pids"
+# Supervisors clean up their own hook on TERM, so stop them before the dispatcher.
+for pidfile in "$RUN_DIR"/forward-*.pid; do
+  [ -e "$pidfile" ] || continue
+  pid="$(cat "$pidfile")"
+  if kill -0 "$pid" 2>/dev/null; then
+    pkill -TERM -P "$pid" 2>/dev/null || true
+    kill -TERM "$pid" 2>/dev/null || true
+    echo "stopped forwarder $(basename "$pidfile" .pid | sed 's/^forward-//')"
+  fi
+  rm -f "$pidfile"
+done
+sleep 2
+
+if [ -f "$RUN_DIR/dispatcher.pid" ]; then
+  kill "$(cat "$RUN_DIR/dispatcher.pid")" 2>/dev/null && echo "stopped dispatcher" || true
+  rm -f "$RUN_DIR/dispatcher.pid"
 fi
 
-# Left behind, these keep firing at a port nobody is listening on.
-if [ -s "$RUN_DIR/hooks" ]; then
-  while IFS=' ' read -r repo id; do
+# Anything a supervisor did not get to remove itself.
+for hookfile in "$RUN_DIR"/hooks-*; do
+  [ -e "$hookfile" ] || continue
+  repo="$(basename "$hookfile" | sed 's/^hooks-//; s/-/\//')"
+  while read -r id; do
     [ -n "${id:-}" ] || continue
     gh api -X DELETE "repos/$repo/hooks/$id" >/dev/null 2>&1 && echo "removed hook $id on $repo" || true
-  done < "$RUN_DIR/hooks"
-  : > "$RUN_DIR/hooks"
-fi
+  done < "$hookfile"
+  rm -f "$hookfile"
+done
+
+rm -f "$RUN_DIR/pids" "$RUN_DIR/hooks" "$RUN_DIR/allowlist"
 [ -d "$RUN_DIR" ] && : > "$RUN_DIR/repos" 2>/dev/null || true
 echo "stopped"
