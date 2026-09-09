@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "start:dispatcher": "node dist/index.js",
-    "start:channel": "node dist/channel/bin.js",
+    "start:channel": "node dist/channel/channel-bin.js",
     "cli": "node dist/cli.js"
   },
   "dependencies": {
