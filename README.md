@@ -106,7 +106,8 @@ Of those, a session is only interrupted for what it can act on:
 
 | Delivered | Suppressed |
 | --- | --- |
-| A comment, review or inline review comment from an allowed author | Bot comments, your own `**Claude:**` replies, reviews with an empty body, authors outside `PR_CHANNEL_COMMENT_AUTHORS` |
+| A comment, review or inline review comment from an allowed author | Your own `**Claude:**` replies, reviews with an empty body, and **people** outside `PR_CHANNEL_COMMENT_AUTHORS` — answering a colleague is the author's job |
+| Reviews from **automated reviewers** (CodeRabbit and the like), which are feedback on this PR | Nothing, unless `PR_CHANNEL_BOT_COMMENTS=ignore` |
 | A check that **finished** | `queued` and `in_progress` transitions — a push with twenty checks fires forty of these and none say anything actionable |
 | All required checks green (derived once per head) | The individual successes that add up to it |
 | `Build Temploy Image` **succeeding** — the go-ahead for work that needs the image | A Temploy build **failing**, its pending states, and every other workflow |
@@ -176,6 +177,7 @@ Every path is configurable; the defaults keep all state out of the repo.
 | `PR_CHANNEL_PORT` | `8787` | Dispatcher port on `127.0.0.1` |
 | `PR_CHANNEL_COMMENT_AUTHORS` | authenticated `gh` user | Logins whose comments may drive a session |
 | `PR_CHANNEL_REQUIRED_CHECKS` | — | Check names that make up "all required green" |
+| `PR_CHANNEL_BOT_COMMENTS` | `handle` | `ignore` drops automated reviewers as well |
 | `PR_CHANNEL_CI_EVENTS` | `completed` | Which CI events interrupt a session: `completed`, `failures`, `all` |
 | `PR_CHANNEL_REPO_ALLOWLIST` | repos you registered | Repositories the dispatcher accepts |
 | `PR_CHANNEL_LEASE_TIMEOUT_MS` | `60000` | How long an unacked event stays hidden before redelivery |

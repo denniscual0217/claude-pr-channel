@@ -498,13 +498,23 @@ describe('self-authored replies', () => {
 });
 
 describe('noise filtering', () => {
-  it('ignores a bot comment: bots narrate and ask for nothing', () => {
+  // An automated reviewer is feedback on this PR; a colleague is the author's to answer.
+  it('handles an automated reviewer even though it is not on the author allowlist', () => {
     expect(normalizeWebhookAll('issue_comment', {
       action: 'created',
       issue: { number: 42, pull_request: {} },
-      comment: { id: 1, body: 'Walkthrough: this PR changes sum.', user: { login: 'coderabbitai[bot]', type: 'Bot' } },
+      comment: { id: 1, body: 'This drops the null check on line 12.', user: { login: 'coderabbitai[bot]', type: 'Bot' } },
       repository: { full_name: 'acme-labs/widget-service' },
-    })).toEqual([]);
+    }, { commentAuthors: new Set(['sam-reviewer']) })).toHaveLength(1);
+  });
+
+  it('drops bot comments when they are configured off', () => {
+    expect(normalizeWebhookAll('issue_comment', {
+      action: 'created',
+      issue: { number: 42, pull_request: {} },
+      comment: { id: 1, body: 'Walkthrough.', user: { login: 'coderabbitai[bot]', type: 'Bot' } },
+      repository: { full_name: 'acme-labs/widget-service' },
+    }, { botComments: 'ignore' })).toEqual([]);
   });
 
   it('ignores a review submitted with no body, which only wraps its inline comments', () => {

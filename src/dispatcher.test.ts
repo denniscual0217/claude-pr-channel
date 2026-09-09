@@ -96,6 +96,7 @@ function dispatcherOver(target: ChannelDb, requiredChecks: readonly string[] = [
       rateLimit: { maxDeliveries: 100, windowMs: 60_000 },
       requiredChecks: [...requiredChecks],
   commentAuthors: null,
+  botComments: 'handle' as const,
     },
     verifier: new WebhookSecret(FAKE_SECRET),
     logger: (entry) => logs.push(entry),

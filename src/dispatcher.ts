@@ -77,6 +77,7 @@ export type DispatcherConfig = Pick<
   | 'rateLimit'
   | 'requiredChecks'
   | 'commentAuthors'
+  | 'botComments'
 >;
 
 export interface DispatcherOptions {
@@ -128,6 +129,7 @@ export function createDispatcher(options: DispatcherOptions): Dispatcher {
           onUnresolvedHead: (head) => unresolved.push(head),
           now: () => receivedAtIso,
           commentAuthors: config.commentAuthors,
+          botComments: config.botComments,
         });
         if (events.length === 0) {
           // A delivery no route can account for is dropped, but never silently: the head

@@ -2,12 +2,14 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { inspect } from 'node:util';
+import type { BotComments } from './events/normalize.js';
 
 export const ENV = {
   host: 'PR_CHANNEL_HOST',
   port: 'PR_CHANNEL_PORT',
   repoAllowlist: 'PR_CHANNEL_REPO_ALLOWLIST',
   commentAuthors: 'PR_CHANNEL_COMMENT_AUTHORS',
+  botComments: 'PR_CHANNEL_BOT_COMMENTS',
   maxPayloadBytes: 'PR_CHANNEL_MAX_PAYLOAD_BYTES',
   rateLimitMax: 'PR_CHANNEL_RATE_LIMIT_MAX',
   rateLimitWindowMs: 'PR_CHANNEL_RATE_LIMIT_WINDOW_MS',
@@ -52,6 +54,9 @@ export interface ServiceConfig {
   // a colleague's review should wait for a human. null means every human author is
   // allowed, which is only appropriate on a repo where that is already true.
   readonly commentAuthors: ReadonlySet<string> | null;
+  // An automated reviewer's comments are feedback on this PR, so they are handled like
+  // anyone else's. Set to 'ignore' if a bot turns out to narrate more than it reviews.
+  readonly botComments: BotComments;
 }
 
 // Logins are compared lowercased: GitHub treats them case-insensitively and a payload
@@ -63,6 +68,12 @@ function parseCommentAuthors(raw: string | undefined): ReadonlySet<string> | nul
     .map((login) => login.trim().toLowerCase())
     .filter((login) => login.length > 0);
   return logins.length > 0 ? new Set(logins) : null;
+}
+
+function parseBotComments(raw: string | undefined): BotComments {
+  const value = (raw ?? 'handle').trim().toLowerCase();
+  if (value === 'handle' || value === 'ignore') return value;
+  throw new ConfigError(`${ENV.botComments} must be "handle" or "ignore"`);
 }
 
 export class ConfigError extends Error {
@@ -87,6 +98,7 @@ export function loadConfig(env: Env = process.env): ServiceConfig {
     port: intFromEnv(env, ENV.port, DEFAULTS.port, { min: 1, max: 65_535 }),
     repoAllowlist: parseRepoAllowlist(env[ENV.repoAllowlist]),
     commentAuthors: parseCommentAuthors(env[ENV.commentAuthors]),
+    botComments: parseBotComments(env[ENV.botComments]),
     maxPayloadBytes: intFromEnv(env, ENV.maxPayloadBytes, DEFAULTS.maxPayloadBytes, { min: 1 }),
     rateLimit: {
       maxDeliveries: intFromEnv(env, ENV.rateLimitMax, DEFAULTS.rateLimitMax, { min: 1 }),
@@ -112,6 +124,7 @@ export function describeConfig(config: ServiceConfig): Record<string, unknown> {
     port: config.port,
     repoAllowlist: [...config.repoAllowlist],
     commentAuthors: config.commentAuthors === null ? null : [...config.commentAuthors],
+    botComments: config.botComments,
     maxPayloadBytes: config.maxPayloadBytes,
     rateLimit: { ...config.rateLimit },
     dbPath: config.dbPath,

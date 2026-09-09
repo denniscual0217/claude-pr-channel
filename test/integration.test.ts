@@ -98,6 +98,7 @@ beforeEach(async () => {
       rateLimit: { maxDeliveries: 500, windowMs: 60_000 },
       requiredChecks: [...FIXTURE_REQUIRED_CHECKS],
   commentAuthors: null,
+  botComments: 'handle' as const,
     },
     verifier: new WebhookSecret(TEST_WEBHOOK_SECRET),
     logger: (entry) => logs.push(entry),

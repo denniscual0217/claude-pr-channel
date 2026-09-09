@@ -29,7 +29,7 @@ case ":$PATH:" in *":$BIN:"*) ;; *) echo "  note: $BIN is not on PATH — add it
 # Register the channel at user scope so every project and worktree picks it up without
 # a .mcp.json of its own. Re-adding is how you update the path, so remove first.
 claude mcp remove pr-channel --scope user >/dev/null 2>&1 || true
-claude mcp add pr-channel --scope user -- node "$ROOT/dist/channel/channel-bin.js" >/dev/null
+claude mcp add pr-channel --scope user -- "$ROOT/bin/pr-channel" channel >/dev/null
 echo "registered MCP channel server 'pr-channel' (user scope)"
 
 SKILL_DIR="${PR_CHANNEL_SKILL_DIR:-$HOME/.claude/skills}/pr-channel"
@@ -59,6 +59,10 @@ if [ ! -f "$RUN_DIR/config" ]; then
 # check; failures narrows it to the ones that finished badly; all adds queued and
 # in_progress, which say nothing actionable.
 # PR_CHANNEL_CI_EVENTS=completed
+
+# Automated reviewers (CodeRabbit and the like) are handled by default. Set to ignore
+# if one narrates more than it reviews.
+# PR_CHANNEL_BOT_COMMENTS=handle
 
 CFG
   echo "created $RUN_DIR/config"

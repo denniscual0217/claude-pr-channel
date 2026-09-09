@@ -25,6 +25,8 @@ export interface UnresolvedHead {
   readonly headSha: string;
 }
 
+export type BotComments = 'handle' | 'ignore';
+
 export interface NormalizeOptions {
   // check_run / check_suite / workflow_run / status payloads name no PR when the run was
   // not triggered by a pull_request event and for every fork PR, so the head SHA is all
@@ -37,6 +39,8 @@ export interface NormalizeOptions {
   // Whose comments and reviews may reach the session. null allows every human author.
   // Acting on a comment means pushing code, so this is a trust boundary.
   readonly commentAuthors?: ReadonlySet<string> | null;
+  // Automated reviewers are handled by default; 'ignore' drops them.
+  readonly botComments?: BotComments;
 }
 
 export function normalizeWebhook(eventName: string, payload: unknown, options: NormalizeOptions = {}): PrEvent | null {
@@ -85,8 +89,6 @@ interface Ctx {
   readonly options: NormalizeOptions;
 }
 
-// Bots (CodeRabbit, CI apps) narrate constantly and ask for nothing. Their signal
-// already arrives as check_run/workflow_run, so their comments are noise here.
 function isBotUser(raw: unknown): boolean {
   const user = obj(raw);
   if (!user) return false;
@@ -94,7 +96,12 @@ function isBotUser(raw: unknown): boolean {
   return (str(user['login']) ?? '').endsWith('[bot]');
 }
 
-function authorAllowed(ctx: Ctx, raw: unknown): boolean {
+// An automated reviewer is feedback on this PR and is handled like any other. A person
+// who is not on the allowlist is not: answering a colleague is the author's job, not this
+// session's. Bots that only narrate get no reply anyway, because an event carrying
+// nothing to act on is answered with silence.
+function senderAllowed(ctx: Ctx, raw: unknown): boolean {
+  if (isBotUser(raw)) return ctx.options.botComments !== 'ignore';
   const allowed = ctx.options.commentAuthors;
   if (allowed === undefined || allowed === null) return true;
   const login = str(obj(raw)?.['login'] ?? null);
@@ -112,8 +119,7 @@ function normalizeIssueComment(ctx: Ctx): PrEvent | null {
   // The worker's own reply arrives back through the webhook; delivering it would have
   // the session answer itself.
   if (isClaudeAuthored(str(comment['body']) ?? '')) return null;
-  if (isBotUser(comment['user'])) return null;
-  if (!authorAllowed(ctx, comment['user'])) return null;
+  if (!senderAllowed(ctx, comment['user'])) return null;
   return {
     kind: 'pr_comment',
     prRef: { repo: ctx.repo, prNumber },
@@ -136,8 +142,7 @@ function normalizeReview(ctx: Ctx): PrEvent | null {
   const reviewId = num(review['id']);
   if (prNumber === null || reviewId === null) return null;
   if (isClaudeAuthored(str(review['body']) ?? '')) return null;
-  if (isBotUser(review['user'])) return null;
-  if (!authorAllowed(ctx, review['user'])) return null;
+  if (!senderAllowed(ctx, review['user'])) return null;
   // A review submitted with no body is just the envelope around its inline comments,
   // which arrive as their own events. Delivering it too asks the session to respond to
   // a review that says nothing.
@@ -165,8 +170,7 @@ function normalizeReviewComment(ctx: Ctx): PrEvent | null {
   const commentId = num(comment['id']);
   if (prNumber === null || commentId === null) return null;
   if (isClaudeAuthored(str(comment['body']) ?? '')) return null;
-  if (isBotUser(comment['user'])) return null;
-  if (!authorAllowed(ctx, comment['user'])) return null;
+  if (!senderAllowed(ctx, comment['user'])) return null;
   return {
     kind: 'pr_review_comment',
     prRef: { repo: ctx.repo, prNumber },
