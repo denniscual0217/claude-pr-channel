@@ -86,8 +86,14 @@ One channel is one `(repo, PR, session)`. It is deliberately narrow:
 6. `stop` → `pr-channel deregister --repo <owner/name> --pr <number>
    --session "$CLAUDE_CODE_SESSION_ID"`, then report and finish.
 
-7. Confirm with `pr-channel status --session "$CLAUDE_CODE_SESSION_ID"` and report the
-   route, head sha and pending count.
+7. Confirm with `pr-channel status --session "$CLAUDE_CODE_SESSION_ID"`. It reports the
+   route and, below a `--- delivery ---` line, whether the dispatcher and this repo's
+   forwarder are up. A route can look perfectly healthy while the forwarder is down and
+   every event is being dropped, so check both. If the forwarder says DOWN, run
+   `pr-channel up <owner/name>` and say so — events missed while it was down are gone for
+   good, and nothing replays them.
+
+   Report the route, head sha, worker directory and delivery health.
 
 ## How an event reaches you
 
@@ -102,9 +108,19 @@ lease expires. Events queued while this session was not running arrive when it s
 
 Each event arrives as an instruction, not a notification. Act on it directly:
 
-- **Review or comment** — make the change, commit, push, then reply on the PR.
+- **Review or comment** — make the change, commit, push, then reply on the PR. This
+  includes automated reviewers: a CodeRabbit finding is feedback on this PR and is
+  weighed like anyone else's. Comments from other people never reach you at all, so
+  anything that does arrive is yours to act on.
 - **Failing check** — read the log, fix the cause, verify locally, commit and push.
 - **All required checks green** — carry on; mark a finished draft ready.
+- **Build Temploy Image succeeded** — the image for this head exists. If your work has a
+  step that needs it, this is the go-ahead. Do not comment about the build itself.
+  A *failed* Temploy build never reaches you: it is not this session's to chase.
+
+Only events you can act on are delivered — pending CI transitions, passing-check noise
+and other people's comments are filtered upstream. So treat what arrives as worth a
+response, and still say nothing when the honest answer is that nothing needs doing.
 
 Where the reply goes matters. An inline review comment is answered **in its own thread**
 and nowhere else. Everything else — conversation comments, reviews, CI results — is
