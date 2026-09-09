@@ -7,6 +7,7 @@
 #   pr-channel status ...             show routes
 #   pr-channel stop                   stop everything and remove the webhooks it created
 #   pr-channel config                 show the config file and the values in effect
+#   pr-channel update                 pull the latest code and reinstall
 set -euo pipefail
 
 SELF="${BASH_SOURCE[0]}"
@@ -37,7 +38,8 @@ fi
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
-  up)    exec "$ROOT/scripts/pr-channel-up.sh" "$@" ;;
+  up)     exec "$ROOT/scripts/pr-channel-up.sh" "$@" ;;
+  update) exec "$ROOT/scripts/update.sh" "$@" ;;
   stop)  exec "$ROOT/scripts/stop-local.sh" "$@" ;;
   config)
     echo "config file: $CONFIG"

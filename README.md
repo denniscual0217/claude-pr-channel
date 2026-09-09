@@ -48,11 +48,20 @@ Nothing else is assumed about the machine. There is no daemon to register, no po
 open, and no reverse proxy: the dispatcher binds `127.0.0.1` and GitHub reaches it
 through `gh webhook forward`.
 
-### Upgrading or removing
+### Updating
 
-Re-running `./scripts/install.sh` after a pull updates everything in place, adds any new
-settings your config is missing, and tells you if a dispatcher is still running with the
-old settings.
+```
+pr-channel update
+```
+
+Pulls the branch you are on and reinstalls: CLI, skill, channel registration, and any
+config settings your file is missing. Pulling alone is not enough — the skill and the
+channel registration live outside the checkout, so they only change when you reinstall.
+
+Restart any open sessions afterwards: a session loads the skill and attaches its channel
+at startup.
+
+### Removing
 
 ```
 ./scripts/uninstall.sh           # stop everything, remove webhooks, CLI, skill, channel
