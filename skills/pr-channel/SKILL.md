@@ -50,12 +50,14 @@ One channel is one `(repo, PR, session)`. It is deliberately narrow:
    - `--repo owner/name` wins over the current repo.
 
 3. Read this session's own id from `$CLAUDE_CODE_SESSION_ID`. Never invent one and never
-   recover it by searching transcripts — that id is what the dispatcher resumes to reach
-   you, and a wrong one routes this PR's events into someone else's conversation.
+   recover it by searching transcripts — the channel attached to this session reads the
+   queue under that id, so a wrong one sends this PR's events to a queue nothing is
+   draining, or into someone else's conversation.
 
 4. Work out the checkout for this PR. A repo often has several: the main clone plus a
-   worktree per branch. The session runs its tools in whichever directory you register,
-   so it must be the one holding this PR's branch.
+   worktree per branch. This session runs its tools where it was launched, so you should
+   already be in the checkout holding this PR's branch — register that one, so the route
+   records where the work actually happens.
 
    - `git rev-parse --show-toplevel` gives the root of the checkout you are in.
    - `git worktree list` shows the others and the branch each holds.
@@ -65,7 +67,9 @@ One channel is one `(repo, PR, session)`. It is deliberately narrow:
      `git worktree add ../<repo>__worktrees/<branch> <branch>`
 
    Registration verifies the directory is a checkout of the repo you named and refuses a
-   mismatch, so a wrong `--dir` fails loudly instead of editing the wrong tree.
+   mismatch, so a wrong `--dir` fails loudly. If you are not in that checkout, say so
+   rather than registering: this session would be answering for a branch it does not have
+   open.
 
 5. Register:
 
@@ -84,6 +88,15 @@ One channel is one `(repo, PR, session)`. It is deliberately narrow:
 
 7. Confirm with `pr-channel status --session "$CLAUDE_CODE_SESSION_ID"` and report the
    route, head sha and pending count.
+
+## How an event reaches you
+
+The dispatcher verifies and normalizes the webhook, then queues it under this session's
+id. The channel attached to this session pushes it in as a `<channel source="pr-channel">`
+event while you are idle — you do not poll and nothing resumes you in another process.
+
+An event is acked only once the push lands, so a failed push is redelivered when its
+lease expires. Events queued while this session was not running arrive when it starts.
 
 ## Acting on what arrives
 
