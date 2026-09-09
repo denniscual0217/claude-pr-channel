@@ -6,6 +6,7 @@
 #   pr-channel deregister ...         release one PR
 #   pr-channel status ...             show routes
 #   pr-channel stop                   stop everything and remove the webhooks it created
+#   pr-channel config                 show the config file and the values in effect
 set -euo pipefail
 
 SELF="${BASH_SOURCE[0]}"
@@ -16,12 +17,37 @@ while [ -L "$SELF" ]; do
 done
 ROOT="$(cd -P "$(dirname "$SELF")/.." && pwd)"
 
+# Persistent settings live in the run directory, outside the repo. Read here so every
+# subcommand sees the same values: the dispatcher and `register` are separate processes,
+# and a variable set for only one of them is a silent mismatch.
+RUN_DIR="${PR_CHANNEL_RUN_DIR:-$HOME/.claude-pr-channel}"
+CONFIG="${PR_CHANNEL_CONFIG:-$RUN_DIR/config}"
+if [ -f "$CONFIG" ]; then
+  while IFS= read -r line; do
+    case "$line" in ''|'#'*) continue ;; esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "$key" in PR_CHANNEL_*|GITHUB_WEBHOOK_SECRET) ;; *) continue ;; esac
+    # Anything already in the environment wins, so a one-off override still works.
+    [ -n "${!key:-}" ] || export "$key=$value"
+  done < "$CONFIG"
+fi
+
 [ -f "$ROOT/dist/cli.js" ] || (cd "$ROOT" && npm run build >/dev/null)
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
   up)    exec "$ROOT/scripts/pr-channel-up.sh" "$@" ;;
   stop)  exec "$ROOT/scripts/stop-local.sh" "$@" ;;
+  config)
+    echo "config file: $CONFIG"
+    [ -f "$CONFIG" ] && { echo "--- contents ---"; cat "$CONFIG"; } || echo "(none yet — create it to set defaults)"
+    echo "--- effective ---"
+    for k in PR_CHANNEL_RUN_DIR PR_CHANNEL_DB_PATH PR_CHANNEL_PORT PR_CHANNEL_COMMENT_AUTHORS \
+             PR_CHANNEL_ALLOWED_TOOLS PR_CHANNEL_REQUIRED_CHECKS PR_CHANNEL_LEASE_TIMEOUT_MS; do
+      printf '%s=%s\n' "$k" "${!k:-<default>}"
+    done
+    exit 0 ;;
   ""|-h|--help|help) exec node "$ROOT/dist/cli.js" --help ;;
   *)     exec node "$ROOT/dist/cli.js" "$cmd" "$@" ;;
 esac

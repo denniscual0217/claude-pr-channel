@@ -26,11 +26,27 @@ git clone <this repo> claude-pr-channel && cd claude-pr-channel
 ./scripts/install.sh
 ```
 
-Builds, puts `pr-channel` on PATH, and installs the Claude Code skill. Re-run after
-pulling to update both.
+Builds, puts `pr-channel` on PATH, installs the Claude Code skill, and writes a config
+file. Re-run after pulling to update. It checks the prerequisites and fails with a clear
+message rather than half-installing.
 
-Requires **Node 24+** (the store uses `node:sqlite`), the **GitHub CLI** logged in, and
-**admin on the repo** you point it at, since forwarding creates a webhook.
+### Requirements
+
+| Need | Why | Check |
+| --- | --- | --- |
+| **Node 24+** | The store uses the built-in `node:sqlite` | `node -v` |
+| **GitHub CLI, logged in** | Creates and forwards the webhook | `gh auth status` |
+| **`cli/gh-webhook` extension** | Webhook forwarding — the installer adds it | `gh extension list` |
+| **Admin on the target repo** | Creating a webhook requires it | `gh api repos/OWNER/NAME --jq .permissions.admin` |
+| **Git** | The session commits and pushes | `git --version` |
+
+**You do not need to install SQLite.** The database is Node 24's built-in `node:sqlite`
+— no `sqlite3` package, no native module, no compiler or build toolchain. The only
+runtime dependencies are `@modelcontextprotocol/sdk` and `zod`, both pure JavaScript.
+
+Nothing else is assumed about the machine. There is no daemon to register, no port to
+open, and no reverse proxy: the dispatcher binds `127.0.0.1` and GitHub reaches it
+through `gh webhook forward`.
 
 ## Use
 
@@ -80,6 +96,24 @@ replies, and comments from anyone outside `PR_CHANNEL_COMMENT_AUTHORS`.
 - The server binds loopback only; the webhook secret is never logged or committed.
 
 ## Configuration
+
+Settings live in `~/.claude-pr-channel/config` as `KEY=VALUE` lines, created by the
+installer with everything commented out. Every subcommand reads it, so the dispatcher and
+the registration CLI can never disagree.
+
+```
+# ~/.claude-pr-channel/config
+PR_CHANNEL_COMMENT_AUTHORS=your-login
+PR_CHANNEL_ALLOWED_TOOLS=Bash(gh *),Bash(git *),Bash(npm *)
+```
+
+Anything already in the environment wins, so a one-off override works too:
+
+```
+PR_CHANNEL_PORT=9001 pr-channel up owner/repo
+```
+
+`pr-channel config` prints the file and the values in effect.
 
 Every path is configurable; the defaults keep all state out of the repo.
 

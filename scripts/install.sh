@@ -26,5 +26,25 @@ SKILL_DIR="${PR_CHANNEL_SKILL_DIR:-$HOME/.claude/skills}/pr-channel"
 mkdir -p "$SKILL_DIR"
 cp "$ROOT/skills/pr-channel/SKILL.md" "$SKILL_DIR/SKILL.md"
 echo "installed $SKILL_DIR/SKILL.md"
+RUN_DIR="${PR_CHANNEL_RUN_DIR:-$HOME/.claude-pr-channel}"
+mkdir -p "$RUN_DIR"
+if [ ! -f "$RUN_DIR/config" ]; then
+  cat > "$RUN_DIR/config" <<'CFG'
+# Settings for pr-channel on this machine. KEY=VALUE, no quotes, no export.
+# Anything set in the environment overrides these for a single run.
+# See `pr-channel config` for what is currently in effect.
+
+# PR_CHANNEL_PORT=8787
+# Logins whose comments may drive a session. Defaults to the authenticated gh user.
+# PR_CHANNEL_COMMENT_AUTHORS=your-login,a-colleague
+# What a session may run. Add your project's test command if it is not covered.
+# PR_CHANNEL_ALLOWED_TOOLS=Bash(gh *),Bash(git *),Bash(npm *)
+# Check names that make up "all required green".
+# PR_CHANNEL_REQUIRED_CHECKS=ci/lint,ci/test
+# PR_CHANNEL_LEASE_TIMEOUT_MS=60000
+CFG
+  echo "created $RUN_DIR/config"
+fi
+
 echo
 echo "Done. In a Claude Code session inside a PR's checkout: /pr-channel <number>"
