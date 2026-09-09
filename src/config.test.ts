@@ -99,18 +99,3 @@ describe('WebhookSecret', () => {
   });
 });
 
-describe('delivery mode', () => {
-  // Both draining the same queue would race, and the courier would resume the session in
-  // a second process while its channel is already attached.
-  it('defaults to the courier', () => {
-    expect(loadConfig({ ...base }).delivery).toBe('courier');
-  });
-
-  it('accepts channel', () => {
-    expect(loadConfig({ ...base, PR_CHANNEL_DELIVERY: 'channel' }).delivery).toBe('channel');
-  });
-
-  it('refuses anything else rather than silently picking one', () => {
-    expect(() => loadConfig({ ...base, PR_CHANNEL_DELIVERY: 'both' })).toThrow(ConfigError);
-  });
-});

@@ -51,29 +51,12 @@ if [ ! -f "$RUN_DIR/config" ]; then
 # PR_CHANNEL_PORT=8787
 # Logins whose comments may drive a session. Defaults to the authenticated gh user.
 # PR_CHANNEL_COMMENT_AUTHORS=your-login,a-colleague
-# What a session may run. Add your project's test command if it is not covered.
-# PR_CHANNEL_ALLOWED_TOOLS=Bash(gh *),Bash(git *),Bash(npm *)
 # Check names that make up "all required green".
 # PR_CHANNEL_REQUIRED_CHECKS=ci/lint,ci/test
 # PR_CHANNEL_LEASE_TIMEOUT_MS=60000
 
-# How events reach a session:
-#   channel  a Claude Code channel pushes into the live session (start sessions with
-#            --dangerously-load-development-channels server:pr-channel)
-#   courier  the dispatcher runs `claude --resume` in a separate process
-PR_CHANNEL_DELIVERY=channel
 CFG
   echo "created $RUN_DIR/config"
-elif ! grep -q '^[[:space:]]*PR_CHANNEL_DELIVERY=' "$RUN_DIR/config"; then
-  # Upgrading from a courier-only install: without this the dispatcher keeps resuming
-  # sessions in a second process and the channel is never used.
-  cat >> "$RUN_DIR/config" <<'CFG'
-
-# How events reach a session: channel (pushed into the live session) or courier
-# (`claude --resume` in a separate process).
-PR_CHANNEL_DELIVERY=channel
-CFG
-  echo "set PR_CHANNEL_DELIVERY=channel in $RUN_DIR/config"
 fi
 
 if pgrep -f 'dist/inde[x].js' >/dev/null 2>&1; then

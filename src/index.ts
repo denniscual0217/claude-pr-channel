@@ -1,6 +1,4 @@
 import { describeConfig, loadConfig, loadWebhookSecret } from './config.js';
-import { claudeSessionSender } from './delivery/claude-session.js';
-import { CourierService } from './delivery/service.js';
 import { createDispatcher } from './dispatcher.js';
 import { ChannelDb } from './store/db.js';
 
@@ -13,24 +11,12 @@ async function main(): Promise<void> {
   const verifier = loadWebhookSecret();
   const db = ChannelDb.open(config.dbPath);
   const dispatcher = createDispatcher({ db, config, verifier });
-  // With a channel attached, the session's own channel process drains the queue. Running
-  // the courier as well would race it and resume the session in a second process.
-  const courier =
-    config.delivery === 'courier'
-      ? new CourierService({
-          db,
-          send: claudeSessionSender(),
-          leaseMs: config.leaseTimeoutMs,
-          logger: (entry) => log(JSON.stringify(entry)),
-        })
-      : null;
 
   let shuttingDown = false;
   const shutdown = async (reason: string): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     log(`shutting down (${reason})`);
-    courier?.stop();
     try {
       await dispatcher.close();
     } catch (error) {
@@ -44,13 +30,8 @@ async function main(): Promise<void> {
 
   try {
     const address = await dispatcher.listen();
-    courier?.start();
     log(`listening on http://${address.host}:${address.port}/webhook`);
-    log(
-      courier === null
-        ? 'delivery: channel — each session pulls its own events over its Claude Code channel'
-        : 'delivery: courier — events are pushed with claude --resume',
-    );
+    log('each registered session receives its events over its Claude Code channel');
     log(JSON.stringify({ config: describeConfig(config) }));
   } catch (error) {
     db.close();

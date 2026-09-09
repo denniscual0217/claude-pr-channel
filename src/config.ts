@@ -8,7 +8,6 @@ export const ENV = {
   port: 'PR_CHANNEL_PORT',
   repoAllowlist: 'PR_CHANNEL_REPO_ALLOWLIST',
   commentAuthors: 'PR_CHANNEL_COMMENT_AUTHORS',
-  delivery: 'PR_CHANNEL_DELIVERY',
   maxPayloadBytes: 'PR_CHANNEL_MAX_PAYLOAD_BYTES',
   rateLimitMax: 'PR_CHANNEL_RATE_LIMIT_MAX',
   rateLimitWindowMs: 'PR_CHANNEL_RATE_LIMIT_WINDOW_MS',
@@ -53,13 +52,7 @@ export interface ServiceConfig {
   // a colleague's review should wait for a human. null means every human author is
   // allowed, which is only appropriate on a repo where that is already true.
   readonly commentAuthors: ReadonlySet<string> | null;
-  // How a queued event reaches its session. 'channel' means a Claude Code channel is
-  // attached and pushes into the live session; the dispatcher must not also spawn a
-  // courier, or the two race for the same queue.
-  readonly delivery: DeliveryMode;
 }
-
-export type DeliveryMode = 'courier' | 'channel';
 
 // Logins are compared lowercased: GitHub treats them case-insensitively and a payload
 // can carry either casing.
@@ -70,12 +63,6 @@ function parseCommentAuthors(raw: string | undefined): ReadonlySet<string> | nul
     .map((login) => login.trim().toLowerCase())
     .filter((login) => login.length > 0);
   return logins.length > 0 ? new Set(logins) : null;
-}
-
-function parseDelivery(raw: string | undefined): DeliveryMode {
-  const value = (raw ?? 'courier').trim().toLowerCase();
-  if (value === 'courier' || value === 'channel') return value;
-  throw new ConfigError(`${ENV.delivery} must be "courier" or "channel"`);
 }
 
 export class ConfigError extends Error {
@@ -100,7 +87,6 @@ export function loadConfig(env: Env = process.env): ServiceConfig {
     port: intFromEnv(env, ENV.port, DEFAULTS.port, { min: 1, max: 65_535 }),
     repoAllowlist: parseRepoAllowlist(env[ENV.repoAllowlist]),
     commentAuthors: parseCommentAuthors(env[ENV.commentAuthors]),
-    delivery: parseDelivery(env[ENV.delivery]),
     maxPayloadBytes: intFromEnv(env, ENV.maxPayloadBytes, DEFAULTS.maxPayloadBytes, { min: 1 }),
     rateLimit: {
       maxDeliveries: intFromEnv(env, ENV.rateLimitMax, DEFAULTS.rateLimitMax, { min: 1 }),
@@ -126,7 +112,6 @@ export function describeConfig(config: ServiceConfig): Record<string, unknown> {
     port: config.port,
     repoAllowlist: [...config.repoAllowlist],
     commentAuthors: config.commentAuthors === null ? null : [...config.commentAuthors],
-    delivery: config.delivery,
     maxPayloadBytes: config.maxPayloadBytes,
     rateLimit: { ...config.rateLimit },
     dbPath: config.dbPath,

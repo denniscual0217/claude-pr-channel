@@ -13,8 +13,8 @@ dispatcher.
 2. It verifies `X-Hub-Signature-256` over the raw body before parsing anything.
 3. It normalizes and deduplicates the delivery, then routes it to the one session
    registered for that PR, storing it durably.
-4. A courier hands each event to that session with `claude --resume <id> -p <event>`, and
-   acks it only once the session has taken it.
+4. That session's channel — an MCP server Claude Code spawns for it — pushes the event in
+   as a `<channel>` event, and acks it only once the push lands.
 
 One channel is one `(repo, PR, session)`. Different PRs and different sessions are
 different channels; they run in parallel and cannot cross-talk.
@@ -112,9 +112,10 @@ replies, and comments from anyone outside `PR_CHANNEL_COMMENT_AUTHORS`.
 - **`PR_CHANNEL_COMMENT_AUTHORS`** is a trust boundary, not a filter: acting on a comment
   means pushing code, so only these logins can drive a session. Defaults to the
   authenticated `gh` user. CI results are never gated by it.
-- Sessions run with `acceptEdits` plus a narrow tool allowlist — enough to run the
-  project's tests, answer on the PR and push, and nothing else. A broader permission mode
-  would hand whoever can comment on a PR an arbitrary shell.
+- Events arrive in the session you launched, so they run with **that session's own
+  permission mode** — this service no longer constrains it. Untrusted comment text reaches
+  a session with your permissions, so do not run a PR-bound session with
+  `--dangerously-skip-permissions`.
 - Comment and review text is carried as clearly-labelled untrusted data, fenced with the
   event id so it cannot impersonate the service.
 - An event for a superseded head is flagged stale and can never report the current head
@@ -130,7 +131,6 @@ the registration CLI can never disagree.
 ```
 # ~/.claude-pr-channel/config
 PR_CHANNEL_COMMENT_AUTHORS=your-login
-PR_CHANNEL_ALLOWED_TOOLS=Bash(gh *),Bash(git *),Bash(npm *)
 ```
 
 Anything already in the environment wins, so a one-off override works too:
@@ -150,9 +150,7 @@ Every path is configurable; the defaults keep all state out of the repo.
 | `PR_CHANNEL_BIN_DIR` | `/usr/local/bin` or `~/.local/bin` | Where `install.sh` links `pr-channel` |
 | `PR_CHANNEL_SKILL_DIR` | `~/.claude/skills` | Where `install.sh` installs the skill |
 | `PR_CHANNEL_PORT` | `8787` | Dispatcher port on `127.0.0.1` |
-| `PR_CHANNEL_DELIVERY` | `courier` | `channel` pushes into the live session; `courier` resumes it in a separate process |
 | `PR_CHANNEL_COMMENT_AUTHORS` | authenticated `gh` user | Logins whose comments may drive a session |
-| `PR_CHANNEL_ALLOWED_TOOLS` | `gh`, `git`, `npm`, `npx`, `yarn`, `pnpm`, `node`, `make` | What a session may run |
 | `PR_CHANNEL_REQUIRED_CHECKS` | — | Check names that make up "all required green" |
 | `PR_CHANNEL_REPO_ALLOWLIST` | repos you registered | Repositories the dispatcher accepts |
 | `PR_CHANNEL_LEASE_TIMEOUT_MS` | `60000` | How long an unacked event stays hidden before redelivery |
