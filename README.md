@@ -96,6 +96,26 @@ pr-channel stop        # releases every route, stops everything, removes its web
 `pr-channel up <owner/repo>`, `register`, `deregister` and `status` are available if you
 would rather drive it by hand.
 
+## What reaches your session
+
+Subscribed webhook events: `issue_comment`, `pull_request`, `pull_request_review`,
+`pull_request_review_comment`, `check_run`, `workflow_run`. Everything else GitHub emits
+is never sent here at all.
+
+Of those, a session is only interrupted for what it can act on:
+
+| Delivered | Suppressed |
+| --- | --- |
+| A comment, review or inline review comment from an allowed author | Bot comments, your own `**Claude:**` replies, reviews with an empty body, authors outside `PR_CHANNEL_COMMENT_AUTHORS` |
+| A check that **finished badly** | `queued` and `in_progress` transitions, and passing checks — a push with twenty checks fires sixty of these |
+| All required checks green (derived once per head) | The individual successes that add up to it |
+| `Build Temploy Image` finishing | Its pending states, and every other workflow |
+| PR opened, synchronized, ready for review, converted to draft, reopened, closed, merged | Labels, assignments, review requests, edits |
+
+`PR_CHANNEL_CI_EVENTS` widens the CI rule: `failures` (default), `completed` to include
+passing checks, `all` to include pending transitions. Suppressed events are still queued
+and acked — they are recorded, they just do not interrupt.
+
 ## What it delivers
 
 PR conversation comments, reviews, inline review comments, CI check results, the
@@ -152,6 +172,7 @@ Every path is configurable; the defaults keep all state out of the repo.
 | `PR_CHANNEL_PORT` | `8787` | Dispatcher port on `127.0.0.1` |
 | `PR_CHANNEL_COMMENT_AUTHORS` | authenticated `gh` user | Logins whose comments may drive a session |
 | `PR_CHANNEL_REQUIRED_CHECKS` | — | Check names that make up "all required green" |
+| `PR_CHANNEL_CI_EVENTS` | `failures` | Which CI events interrupt a session: `failures`, `completed`, `all` |
 | `PR_CHANNEL_REPO_ALLOWLIST` | repos you registered | Repositories the dispatcher accepts |
 | `PR_CHANNEL_LEASE_TIMEOUT_MS` | `60000` | How long an unacked event stays hidden before redelivery |
 | `GITHUB_WEBHOOK_SECRET` | generated per machine | HMAC secret, kept `0600` in the run directory |

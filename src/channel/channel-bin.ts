@@ -3,9 +3,15 @@ import { DEFAULTS, ENV } from '../config.js';
 import { PrRegistry } from '../registry/registry.js';
 import { ChannelDb } from '../store/db.js';
 import { SessionQueue } from './queue.js';
-import { createPrChannelServer, pumpOnce } from './channel-server.js';
+import { createPrChannelServer, pumpOnce, type CiEvents } from './channel-server.js';
 
 const POLL_MS = 1_000;
+
+function ciEvents(): CiEvents {
+  const raw = (process.env['PR_CHANNEL_CI_EVENTS'] ?? 'failures').trim().toLowerCase();
+  if (raw === 'failures' || raw === 'completed' || raw === 'all') return raw;
+  throw new Error('PR_CHANNEL_CI_EVENTS must be failures, completed or all');
+}
 
 // stdout is the MCP transport; diagnostics carry ids and counts only, never event bodies.
 function log(message: string): void {
@@ -43,17 +49,27 @@ async function main(): Promise<void> {
   }
 
   const server = createPrChannelServer();
+  const wakeOn = ciEvents();
   const queue = new SessionQueue(db, session, { leaseMs });
   await server.connect(new StdioServerTransport());
-  log(`channel open for session ${session.slice(0, 8)} in ${dir}${route ? ` (${route.prRef.repo}#${route.prRef.prNumber})` : ' (no route yet)'}`);
+  log(`channel open (ci=${wakeOn}) for session ${session.slice(0, 8)} in ${dir}${route ? ` (${route.prRef.repo}#${route.prRef.prNumber})` : ' (no route yet)'}`);
 
   let stopped = false;
   const timer = setInterval(() => {
     if (stopped) return;
     stopped = true;
-    void pumpOnce(queue, server, { onError: (error) => log(`push failed: ${error instanceof Error ? error.name : 'unknown'}`) })
+    let suppressed = 0;
+    void pumpOnce(queue, server, {
+      ciEvents: wakeOn,
+      onSuppressed: () => {
+        suppressed += 1;
+      },
+      onError: (error) => log(`push failed: ${error instanceof Error ? error.name : 'unknown'}`),
+    })
       .then((pushed) => {
-        if (pushed > 0) log(`pushed ${pushed} event(s)`);
+        if (pushed > 0 || suppressed > 0) {
+          log(`pushed ${pushed} event(s)${suppressed > 0 ? `, suppressed ${suppressed} routine CI event(s)` : ''}`);
+        }
       })
       .finally(() => {
         stopped = false;
