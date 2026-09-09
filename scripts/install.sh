@@ -18,7 +18,11 @@ npm run build >/dev/null
 if [ -n "${PR_CHANNEL_BIN_DIR:-}" ]; then BIN="$PR_CHANNEL_BIN_DIR"; mkdir -p "$BIN"
 elif [ -w /usr/local/bin ]; then BIN=/usr/local/bin
 else BIN="$HOME/.local/bin"; mkdir -p "$BIN"; fi
-ln -sf "$ROOT/bin/pr-channel" "$BIN/pr-channel"
+if [ "$BIN/pr-channel" -ef "$ROOT/bin/pr-channel" ]; then
+  echo "pr-channel already at $BIN/pr-channel"
+else
+  ln -sf "$ROOT/bin/pr-channel" "$BIN/pr-channel"
+fi
 echo "installed $BIN/pr-channel"
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "  note: $BIN is not on PATH — add it to your shell profile" ;; esac
 
@@ -30,7 +34,11 @@ echo "registered MCP channel server 'pr-channel' (user scope)"
 
 SKILL_DIR="${PR_CHANNEL_SKILL_DIR:-$HOME/.claude/skills}/pr-channel"
 mkdir -p "$SKILL_DIR"
-cp "$ROOT/skills/pr-channel/SKILL.md" "$SKILL_DIR/SKILL.md"
+if [ "$SKILL_DIR/SKILL.md" -ef "$ROOT/skills/pr-channel/SKILL.md" ]; then
+  echo "skill already at $SKILL_DIR/SKILL.md"
+else
+  cp "$ROOT/skills/pr-channel/SKILL.md" "$SKILL_DIR/SKILL.md"
+fi
 echo "installed $SKILL_DIR/SKILL.md"
 RUN_DIR="${PR_CHANNEL_RUN_DIR:-$HOME/.claude-pr-channel}"
 mkdir -p "$RUN_DIR"
