@@ -48,6 +48,17 @@ Nothing else is assumed about the machine. There is no daemon to register, no po
 open, and no reverse proxy: the dispatcher binds `127.0.0.1` and GitHub reaches it
 through `gh webhook forward`.
 
+### Upgrading or removing
+
+Re-running `./scripts/install.sh` after a pull updates everything in place, adds any new
+settings your config is missing, and tells you if a dispatcher is still running with the
+old settings.
+
+```
+./scripts/uninstall.sh           # stop everything, remove webhooks, CLI, skill, channel
+./scripts/uninstall.sh --purge   # and delete the database, config and secret
+```
+
 ## Use
 
 Start the session with the channel attached, inside the checkout for the PR:

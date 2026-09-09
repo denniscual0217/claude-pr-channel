@@ -56,6 +56,22 @@ if [ ! -f "$RUN_DIR/config" ]; then
 PR_CHANNEL_DELIVERY=channel
 CFG
   echo "created $RUN_DIR/config"
+elif ! grep -q '^[[:space:]]*PR_CHANNEL_DELIVERY=' "$RUN_DIR/config"; then
+  # Upgrading from a courier-only install: without this the dispatcher keeps resuming
+  # sessions in a second process and the channel is never used.
+  cat >> "$RUN_DIR/config" <<'CFG'
+
+# How events reach a session: channel (pushed into the live session) or courier
+# (`claude --resume` in a separate process).
+PR_CHANNEL_DELIVERY=channel
+CFG
+  echo "set PR_CHANNEL_DELIVERY=channel in $RUN_DIR/config"
+fi
+
+if pgrep -f 'dist/inde[x].js' >/dev/null 2>&1; then
+  echo
+  echo "NOTE: a dispatcher is already running with the previous settings."
+  echo "      Run 'pr-channel stop' and start again for this install to take effect."
 fi
 
 echo
