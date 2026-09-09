@@ -129,19 +129,24 @@ describe('worthWaking', () => {
     } as EnvelopeOf<'ci_check'>;
   }
 
-  // A push with twenty checks fires sixty transitions; "ci/lint is queued" is not worth
-  // interrupting a session for.
-  it('by default wakes only for checks that finished badly', () => {
-    expect(worthWaking(check({ status: 'queued' }), 'failures')).toBe(false);
-    expect(worthWaking(check({ status: 'in_progress' }), 'failures')).toBe(false);
+  // A push with twenty checks fires sixty transitions; "ci/lint is queued" says nothing
+  // a session can act on.
+  it('never wakes for a check that has not finished', () => {
+    for (const mode of ['completed', 'failures'] as const) {
+      expect(worthWaking(check({ status: 'queued' }), mode)).toBe(false);
+      expect(worthWaking(check({ status: 'in_progress' }), mode)).toBe(false);
+    }
+  });
+
+  it('delivers every finished check by default, pass or fail', () => {
+    expect(worthWaking(check({ status: 'completed', conclusion: 'success' }), 'completed')).toBe(true);
+    expect(worthWaking(check({ status: 'completed', conclusion: 'failure' }), 'completed')).toBe(true);
+  });
+
+  it('failures narrows to the ones that finished badly; all reinstates the pending states', () => {
     expect(worthWaking(check({ status: 'completed', conclusion: 'success' }), 'failures')).toBe(false);
     expect(worthWaking(check({ status: 'completed', conclusion: 'failure' }), 'failures')).toBe(true);
     expect(worthWaking(check({ status: 'completed', conclusion: 'timed_out' }), 'failures')).toBe(true);
-  });
-
-  it('completed adds the successes, all adds the pending states', () => {
-    expect(worthWaking(check({ status: 'completed', conclusion: 'success' }), 'completed')).toBe(true);
-    expect(worthWaking(check({ status: 'queued' }), 'completed')).toBe(false);
     expect(worthWaking(check({ status: 'queued' }), 'all')).toBe(true);
   });
 
@@ -156,9 +161,7 @@ describe('worthWaking', () => {
     db.enqueueEvent(comment('s1', 'real request'));
     const notifier = { notification: vi.fn().mockResolvedValue(undefined) };
 
-    const pushed = await pumpOnce(new SessionQueue(db, 's1', { leaseMs: 60_000 }), notifier, {
-      ciEvents: 'failures',
-    });
+    const pushed = await pumpOnce(new SessionQueue(db, 's1', { leaseMs: 60_000 }), notifier);
 
     expect(pushed).toBe(1);
     expect(notifier.notification).toHaveBeenCalledTimes(1);

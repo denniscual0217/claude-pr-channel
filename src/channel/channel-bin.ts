@@ -8,9 +8,9 @@ import { createPrChannelServer, pumpOnce, type CiEvents } from './channel-server
 const POLL_MS = 1_000;
 
 function ciEvents(): CiEvents {
-  const raw = (process.env['PR_CHANNEL_CI_EVENTS'] ?? 'failures').trim().toLowerCase();
+  const raw = (process.env['PR_CHANNEL_CI_EVENTS'] ?? 'completed').trim().toLowerCase();
   if (raw === 'failures' || raw === 'completed' || raw === 'all') return raw;
-  throw new Error('PR_CHANNEL_CI_EVENTS must be failures, completed or all');
+  throw new Error('PR_CHANNEL_CI_EVENTS must be completed, failures or all');
 }
 
 // stdout is the MCP transport; diagnostics carry ids and counts only, never event bodies.

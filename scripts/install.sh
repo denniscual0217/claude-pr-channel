@@ -55,6 +55,11 @@ if [ ! -f "$RUN_DIR/config" ]; then
 # PR_CHANNEL_REQUIRED_CHECKS=ci/lint,ci/test
 # PR_CHANNEL_LEASE_TIMEOUT_MS=60000
 
+# Which CI events interrupt a session. completed (default) delivers every finished
+# check; failures narrows it to the ones that finished badly; all adds queued and
+# in_progress, which say nothing actionable.
+# PR_CHANNEL_CI_EVENTS=completed
+
 CFG
   echo "created $RUN_DIR/config"
 fi

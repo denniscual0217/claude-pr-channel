@@ -107,14 +107,18 @@ Of those, a session is only interrupted for what it can act on:
 | Delivered | Suppressed |
 | --- | --- |
 | A comment, review or inline review comment from an allowed author | Bot comments, your own `**Claude:**` replies, reviews with an empty body, authors outside `PR_CHANNEL_COMMENT_AUTHORS` |
-| A check that **finished badly** | `queued` and `in_progress` transitions, and passing checks — a push with twenty checks fires sixty of these |
+| A check that **finished** | `queued` and `in_progress` transitions — a push with twenty checks fires forty of these and none say anything actionable |
 | All required checks green (derived once per head) | The individual successes that add up to it |
 | `Build Temploy Image` finishing | Its pending states, and every other workflow |
 | PR opened, synchronized, ready for review, converted to draft, reopened, closed, merged | Labels, assignments, review requests, edits |
 
-`PR_CHANNEL_CI_EVENTS` widens the CI rule: `failures` (default), `completed` to include
-passing checks, `all` to include pending transitions. Suppressed events are still queued
-and acked — they are recorded, they just do not interrupt.
+`PR_CHANNEL_CI_EVENTS` tunes the CI rule: `completed` (default) delivers every finished
+check, `failures` narrows it to the ones that finished badly, `all` reinstates the pending
+transitions. Suppressed events are still queued and acked — they are recorded, they just
+do not interrupt.
+
+On a repo with many checks, `completed` still means one interruption per check per push.
+`failures` cuts that to the ones you can act on, plus the single all-required-green.
 
 ## What it delivers
 
@@ -172,7 +176,7 @@ Every path is configurable; the defaults keep all state out of the repo.
 | `PR_CHANNEL_PORT` | `8787` | Dispatcher port on `127.0.0.1` |
 | `PR_CHANNEL_COMMENT_AUTHORS` | authenticated `gh` user | Logins whose comments may drive a session |
 | `PR_CHANNEL_REQUIRED_CHECKS` | — | Check names that make up "all required green" |
-| `PR_CHANNEL_CI_EVENTS` | `failures` | Which CI events interrupt a session: `failures`, `completed`, `all` |
+| `PR_CHANNEL_CI_EVENTS` | `completed` | Which CI events interrupt a session: `completed`, `failures`, `all` |
 | `PR_CHANNEL_REPO_ALLOWLIST` | repos you registered | Repositories the dispatcher accepts |
 | `PR_CHANNEL_LEASE_TIMEOUT_MS` | `60000` | How long an unacked event stays hidden before redelivery |
 | `GITHUB_WEBHOOK_SECRET` | generated per machine | HMAC secret, kept `0600` in the run directory |

@@ -39,8 +39,8 @@ export function eventMeta(envelope: EventEnvelope): Record<string, string> {
 }
 
 // Which CI events are worth interrupting a session for.
+//   completed every finished check, successes included (default)
 //   failures  only checks that finished badly, plus the derived all-required-green
-//   completed every finished check, successes included
 //   all       every transition, including queued and in_progress
 export type CiEvents = 'failures' | 'completed' | 'all';
 
@@ -82,7 +82,7 @@ export async function pumpOnce(
   options: PumpOptions = {},
 ): Promise<number> {
   const { events } = queue.poll({ limit: options.limit ?? 10 });
-  const ciEvents = options.ciEvents ?? 'failures';
+  const ciEvents = options.ciEvents ?? 'completed';
   let pushed = 0;
 
   for (const envelope of events) {
