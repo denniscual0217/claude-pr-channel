@@ -1,0 +1,62 @@
+{
+  "action": "created",
+  "issue": {
+    "id": 2211334455,
+    "number": 42,
+    "title": "Cache widget lookups per request",
+    "state": "open",
+    "user": {
+      "login": "dana-eng",
+      "id": 5510001,
+      "type": "User",
+      "html_url": "https://github.com/dana-eng"
+    },
+    "html_url": "https://github.com/acme-labs/widget-service/pull/42",
+    "pull_request": {
+      "url": "https://api.github.com/repos/acme-labs/widget-service/pulls/42",
+      "html_url": "https://github.com/acme-labs/widget-service/pull/42",
+      "diff_url": "https://github.com/acme-labs/widget-service/pull/42.diff",
+      "patch_url": "https://github.com/acme-labs/widget-service/pull/42.patch"
+    }
+  },
+  "comment": {
+    "id": 3301122334,
+    "node_id": "IC_kwDOA1b2c3M4NTY3",
+    "user": {
+      "login": "sam-reviewer",
+      "id": 5510002,
+      "type": "User",
+      "html_url": "https://github.com/sam-reviewer"
+    },
+    "created_at": "2026-09-07T10:03:00Z",
+    "updated_at": "2026-09-07T10:03:00Z",
+    "html_url": "https://github.com/acme-labs/widget-service/pull/42#issuecomment-3301122334",
+    "issue_url": "https://api.github.com/repos/acme-labs/widget-service/issues/42",
+    "author_association": "MEMBER",
+    "body": "Could you add a metric for cache hits before we merge this?"
+  },
+  "repository": {
+    "id": 55501234,
+    "name": "widget-service",
+    "full_name": "acme-labs/widget-service",
+    "private": true,
+    "owner": {
+      "login": "acme-labs",
+      "id": 900001,
+      "type": "User",
+      "html_url": "https://github.com/acme-labs"
+    },
+    "html_url": "https://github.com/acme-labs/widget-service",
+    "default_branch": "main"
+  },
+  "organization": {
+    "login": "acme-labs",
+    "id": 900001
+  },
+  "sender": {
+    "login": "sam-reviewer",
+    "id": 5510002,
+    "type": "User",
+    "html_url": "https://github.com/sam-reviewer"
+  }
+}

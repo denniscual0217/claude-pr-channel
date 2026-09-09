@@ -1,0 +1,76 @@
+{
+  "action": "completed",
+  "workflow": {
+    "id": 660011,
+    "name": "Build Temploy Image",
+    "path": ".github/workflows/temploy.yml"
+  },
+  "workflow_run": {
+    "id": 9900110022,
+    "name": "Build Temploy Image",
+    "node_id": "WFR_kwDOA1b2c3M5OTAw",
+    "head_branch": "feature/widget-cache",
+    "head_sha": "4d0f1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b",
+    "run_number": 214,
+    "run_attempt": 1,
+    "event": "pull_request",
+    "status": "completed",
+    "conclusion": "success",
+    "workflow_id": 660011,
+    "html_url": "https://github.com/acme-labs/widget-service/actions/runs/9900110022",
+    "created_at": "2026-09-07T10:05:02Z",
+    "run_started_at": "2026-09-07T10:05:05Z",
+    "updated_at": "2026-09-07T10:09:48Z",
+    "actor": {
+      "login": "dana-eng",
+      "id": 5510001,
+      "type": "User",
+      "html_url": "https://github.com/dana-eng"
+    },
+    "triggering_actor": {
+      "login": "dana-eng",
+      "id": 5510001,
+      "type": "User",
+      "html_url": "https://github.com/dana-eng"
+    },
+    "pull_requests": [
+      {
+        "id": 1902334455,
+        "number": 42,
+        "url": "https://api.github.com/repos/acme-labs/widget-service/pulls/42",
+        "head": {
+          "ref": "feature/widget-cache",
+          "sha": "4d0f1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b"
+        },
+        "base": {
+          "ref": "main",
+          "sha": "1b7c0d9e8f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c"
+        }
+      }
+    ]
+  },
+  "repository": {
+    "id": 55501234,
+    "name": "widget-service",
+    "full_name": "acme-labs/widget-service",
+    "private": true,
+    "owner": {
+      "login": "acme-labs",
+      "id": 900001,
+      "type": "User",
+      "html_url": "https://github.com/acme-labs"
+    },
+    "html_url": "https://github.com/acme-labs/widget-service",
+    "default_branch": "main"
+  },
+  "organization": {
+    "login": "acme-labs",
+    "id": 900001
+  },
+  "sender": {
+    "login": "dana-eng",
+    "id": 5510001,
+    "type": "User",
+    "html_url": "https://github.com/dana-eng"
+  }
+}

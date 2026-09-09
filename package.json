@@ -1,0 +1,28 @@
+{
+  "name": "claude-pr-channel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local GitHub PR event dispatcher and per-session MCP channel for Claude Code workers",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start:dispatcher": "node dist/index.js",
+    "start:channel": "node dist/channel/bin.js",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11"
+  }
+}

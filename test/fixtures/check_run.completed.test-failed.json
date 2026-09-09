@@ -1,0 +1,68 @@
+{
+  "action": "completed",
+  "check_run": {
+    "id": 8800110003,
+    "node_id": "CR_kwDOA1b2c3M8800110003",
+    "name": "ci/test",
+    "head_sha": "4d0f1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b",
+    "external_id": "job-8800110003",
+    "status": "completed",
+    "conclusion": "failure",
+    "started_at": "2026-09-07T10:05:00Z",
+    "completed_at": "2026-09-07T10:07:31Z",
+    "html_url": "acme-labs/widget-service/runs/8800110003",
+    "details_url": "https://github.com/acme-labs/widget-service/actions/runs/8800110003",
+    "app": {
+      "id": 15368,
+      "slug": "github-actions",
+      "name": "GitHub Actions"
+    },
+    "check_suite": {
+      "id": 7700110022
+    },
+    "output": {
+      "title": "ci/test",
+      "summary": "",
+      "annotations_count": 0
+    },
+    "pull_requests": [
+      {
+        "id": 1902334455,
+        "number": 42,
+        "url": "https://api.github.com/repos/acme-labs/widget-service/pulls/42",
+        "head": {
+          "ref": "feature/widget-cache",
+          "sha": "4d0f1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b"
+        },
+        "base": {
+          "ref": "main",
+          "sha": "1b7c0d9e8f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c"
+        }
+      }
+    ]
+  },
+  "repository": {
+    "id": 55501234,
+    "name": "widget-service",
+    "full_name": "acme-labs/widget-service",
+    "private": true,
+    "owner": {
+      "login": "acme-labs",
+      "id": 900001,
+      "type": "User",
+      "html_url": "https://github.com/acme-labs"
+    },
+    "html_url": "https://github.com/acme-labs/widget-service",
+    "default_branch": "main"
+  },
+  "organization": {
+    "login": "acme-labs",
+    "id": 900001
+  },
+  "sender": {
+    "login": "dana-eng",
+    "id": 5510001,
+    "type": "User",
+    "html_url": "https://github.com/dana-eng"
+  }
+}
