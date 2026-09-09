@@ -22,6 +22,12 @@ ln -sf "$ROOT/bin/pr-channel" "$BIN/pr-channel"
 echo "installed $BIN/pr-channel"
 case ":$PATH:" in *":$BIN:"*) ;; *) echo "  note: $BIN is not on PATH — add it to your shell profile" ;; esac
 
+# Register the channel at user scope so every project and worktree picks it up without
+# a .mcp.json of its own. Re-adding is how you update the path, so remove first.
+claude mcp remove pr-channel --scope user >/dev/null 2>&1 || true
+claude mcp add pr-channel --scope user -- node "$ROOT/dist/channel/channel-bin.js" >/dev/null
+echo "registered MCP channel server 'pr-channel' (user scope)"
+
 SKILL_DIR="${PR_CHANNEL_SKILL_DIR:-$HOME/.claude/skills}/pr-channel"
 mkdir -p "$SKILL_DIR"
 cp "$ROOT/skills/pr-channel/SKILL.md" "$SKILL_DIR/SKILL.md"
@@ -42,9 +48,19 @@ if [ ! -f "$RUN_DIR/config" ]; then
 # Check names that make up "all required green".
 # PR_CHANNEL_REQUIRED_CHECKS=ci/lint,ci/test
 # PR_CHANNEL_LEASE_TIMEOUT_MS=60000
+
+# How events reach a session:
+#   channel  a Claude Code channel pushes into the live session (start sessions with
+#            --dangerously-load-development-channels server:pr-channel)
+#   courier  the dispatcher runs `claude --resume` in a separate process
+PR_CHANNEL_DELIVERY=channel
 CFG
   echo "created $RUN_DIR/config"
 fi
 
 echo
-echo "Done. In a Claude Code session inside a PR's checkout: /pr-channel <number>"
+echo "Done."
+echo
+echo "Start sessions with the channel attached:"
+echo "  claude --dangerously-load-development-channels server:pr-channel"
+echo "Then, inside a PR's checkout: /pr-channel <number>"

@@ -50,7 +50,13 @@ through `gh webhook forward`.
 
 ## Use
 
-In a Claude Code session, inside the checkout for the PR:
+Start the session with the channel attached, inside the checkout for the PR:
+
+```
+claude --dangerously-load-development-channels server:pr-channel
+```
+
+Then:
 
 ```
 /pr-channel 123        # bind this session to PR 123
@@ -124,6 +130,7 @@ Every path is configurable; the defaults keep all state out of the repo.
 | `PR_CHANNEL_BIN_DIR` | `/usr/local/bin` or `~/.local/bin` | Where `install.sh` links `pr-channel` |
 | `PR_CHANNEL_SKILL_DIR` | `~/.claude/skills` | Where `install.sh` installs the skill |
 | `PR_CHANNEL_PORT` | `8787` | Dispatcher port on `127.0.0.1` |
+| `PR_CHANNEL_DELIVERY` | `courier` | `channel` pushes into the live session; `courier` resumes it in a separate process |
 | `PR_CHANNEL_COMMENT_AUTHORS` | authenticated `gh` user | Logins whose comments may drive a session |
 | `PR_CHANNEL_ALLOWED_TOOLS` | `gh`, `git`, `npm`, `npx`, `yarn`, `pnpm`, `node`, `make` | What a session may run |
 | `PR_CHANNEL_REQUIRED_CHECKS` | — | Check names that make up "all required green" |

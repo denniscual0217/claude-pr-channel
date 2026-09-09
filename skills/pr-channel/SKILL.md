@@ -33,6 +33,12 @@ One channel is one `(repo, PR, session)`. It is deliberately narrow:
    If `pr-channel` is not on PATH, this machine has not been set up: run
    `scripts/install.sh` from the claude-pr-channel checkout and say so.
 
+   Then check this session actually has the channel attached — its startup banner says
+   `Channels (experimental) messages from server:pr-channel inject directly in this
+   session`. If it does not, events will be queued and never arrive. Say so and stop:
+   the session must be restarted with
+   `claude --dangerously-load-development-channels server:pr-channel`.
+
    It starts the dispatcher if needed and forwards that repo's real GitHub webhook
    deliveries to it, with no public endpoint. Creating the webhook needs **admin** on the
    repo; if that fails, stop and say so — without it nothing is ever delivered.
