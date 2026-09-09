@@ -241,7 +241,7 @@ describe('client disconnect', () => {
 
 describe('process boundary', () => {
   it('never reaches for tmux, child processes, or signals', () => {
-    for (const file of ['manager.ts', 'mcp-server.ts', 'queue.ts', 'bin.ts']) {
+    for (const file of ['manager.ts', 'channel-server.ts', 'queue.ts', 'channel-bin.ts']) {
       const source = readFileSync(join(import.meta.dirname, file), 'utf8');
       expect(source, file).not.toMatch(/child_process|tmux|process\.kill\b/);
     }

@@ -1,7 +1,7 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createChannelServer, TOOL_NAMES } from '../src/channel/mcp-server.js';
+import { ChannelManager } from '../src/channel/manager.js';
+import { describeEvent, routeHeadSha } from '../src/channel/describe.js';
+import { SessionQueue } from '../src/channel/queue.js';
 import { WebhookSecret } from '../src/config.js';
 import { createDispatcher, type Dispatcher, type DispatcherLogEntry } from '../src/dispatcher.js';
 import { ChannelDb } from '../src/store/db.js';
@@ -51,32 +51,32 @@ let baseUrl: string;
 let logs: DispatcherLogEntry[];
 let closers: Array<() => Promise<void>>;
 
-async function connect(sessionId: string): Promise<Client> {
-  const channel = createChannelServer({ db, sessionId, leaseMs: LEASE_MS });
-  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
-  await channel.server.connect(serverSide);
-  const client = new Client({ name: 'integration-test', version: '0.0.0' });
-  await client.connect(clientSide);
-  closers.push(async () => {
-    await client.close();
-    await channel.server.close();
-  });
-  return client;
+// The channel reads its session's queue directly, so the integration tests observe the
+// same surface it does rather than a transport that no longer exists.
+async function connect(sessionId: string): Promise<SessionQueue> {
+  return new SessionQueue(db, sessionId, { leaseMs: LEASE_MS });
 }
 
-async function poll(client: Client): Promise<PollResult> {
-  const result = await client.callTool({ name: TOOL_NAMES.poll, arguments: {} });
-  return (result as unknown as { structuredContent: PollResult }).structuredContent;
+async function poll(queue: SessionQueue): Promise<PollResult> {
+  const { events } = queue.poll();
+  const described = events.map((event) => describeEvent(event, routeHeadSha(db, event.prRef)));
+  const status = new ChannelManager(db).status(queue.sessionId);
+  return {
+    events: described as unknown as PolledEvent[],
+    untrustedTextNotice: UNTRUSTED_TEXT_NOTICE,
+    remainingUnacked: status.unacked,
+    channel: { state: status.state, closed: status.route?.closed ?? false, unacked: status.unacked },
+  };
 }
 
-async function ack(client: Client, eventIds: string[]): Promise<Record<string, unknown>> {
-  const result = await client.callTool({ name: TOOL_NAMES.ack, arguments: { eventIds } });
-  return (result as unknown as { structuredContent: Record<string, unknown> }).structuredContent;
+async function ack(queue: SessionQueue, eventIds: string[]): Promise<Record<string, unknown>> {
+  const result = queue.ack(eventIds);
+  return { ...result, remainingUnacked: queue.countUnacked() };
 }
 
-async function channelStatus(client: Client): Promise<Record<string, unknown>> {
-  const result = await client.callTool({ name: TOOL_NAMES.status, arguments: {} });
-  return (result as unknown as { structuredContent: Record<string, unknown> }).structuredContent;
+async function channelStatus(queue: SessionQueue): Promise<Record<string, unknown>> {
+  const manager = new ChannelManager(db);
+  return manager.status(queue.sessionId) as unknown as Record<string, unknown>;
 }
 
 async function deliver(name: FixtureName, options: SignDeliveryOptions = {}): Promise<number> {
