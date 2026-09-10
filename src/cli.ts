@@ -12,6 +12,7 @@ export const USAGE = `claude-pr-channel registration CLI
   register    --repo <owner/name> --pr <number> --session <id> [--head <sha>] [--dir <path>] [--replace]
   deregister  --repo <owner/name> --pr <number> --session <id>
   status      [--session <id>] [--repo <owner/name> --pr <number>]
+  prune       --stale-before <iso>   release routes last touched before that instant
 
 Environment: ${ENV.dbPath} (default ${DEFAULTS.dbPath}), ${ENV.repoAllowlist} (enforced when set).
 Registering binds one (repo, PR, session): the dispatcher pushes that PR's events into that session.`;
@@ -87,6 +88,8 @@ export function runCli(argv: readonly string[], io: CliIo): number {
         return deregister(db, flags, io);
       case 'status':
         return status(db, flags, io);
+      case 'prune':
+        return prune(db, flags, io);
       default:
         io.stderr(`unknown command "${command}"`);
         io.stderr(USAGE);
@@ -201,6 +204,7 @@ interface Flags {
   readonly session?: string;
   readonly head?: string;
   readonly dir?: string;
+  readonly staleBefore?: string;
   readonly replace: boolean;
 }
 
@@ -219,7 +223,9 @@ function parseFlags(argv: readonly string[]): Flags {
     }
     if (!token.startsWith('--')) throw new UsageError(`unexpected argument "${token}"`);
     const name = token.slice(2);
-    if (!['repo', 'pr', 'session', 'head', 'dir'].includes(name)) throw new UsageError(`unknown flag "${token}"`);
+    if (!['repo', 'pr', 'session', 'head', 'dir', 'stale-before'].includes(name)) {
+      throw new UsageError(`unknown flag "${token}"`);
+    }
     const value = argv[index + 1];
     if (value === undefined || value.startsWith('--')) throw new UsageError(`${token} requires a value`);
     values[name] = value;
@@ -231,6 +237,7 @@ function parseFlags(argv: readonly string[]): Flags {
     ...(values['session'] !== undefined ? { session: values['session'] } : {}),
     ...(values['head'] !== undefined ? { head: values['head'] } : {}),
     ...(values['dir'] !== undefined ? { dir: values['dir'] } : {}),
+    ...(values['stale-before'] !== undefined ? { staleBefore: values['stale-before'] } : {}),
     replace,
   };
 }
@@ -264,6 +271,24 @@ function assertAllowed(env: CliIo['env'], repo: string): void {
   if (!allowed.has(repo)) {
     throw new UsageError(`repo "${repo}" is not in ${ENV.repoAllowlist}; its events would never be delivered`);
   }
+}
+
+// Every process dies at a restart, so a route last touched before the machine booted is
+// held by a session that cannot still exist. Releasing those is what stops the next
+// session on that PR being refused with `conflict` for a session that is long gone.
+function prune(db: ChannelDb, flags: Flags, io: CliIo): number {
+  const before = flags.staleBefore?.trim();
+  if (!before || Number.isNaN(Date.parse(before))) {
+    throw new UsageError('--stale-before <iso timestamp> is required');
+  }
+  const cutoff = Date.parse(before);
+  const released: Record<string, unknown>[] = [];
+  for (const route of db.listOpenRoutes()) {
+    if (Date.parse(route.updatedAtIso) >= cutoff) continue;
+    db.closeRoute(route.prRef);
+    released.push({ repo: route.prRef.repo, prNumber: route.prRef.prNumber, sessionId: route.sessionId });
+  }
+  return emit(io, EXIT.ok, { command: 'prune', ok: true, released });
 }
 
 function describeRoute(route: SessionRoute): Record<string, unknown> {

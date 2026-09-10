@@ -41,6 +41,18 @@ export PR_CHANNEL_REPO_ALLOWLIST="$(IFS=,; echo "${REPOS[*]}")"
 cd "$ROOT"
 npm run build >/dev/null
 
+# Nothing survives a restart, so a route last touched before this boot is held by a
+# session that no longer exists. Release those, or the next session on that PR is refused
+# with `conflict` for a session that died with the machine.
+if [ -r /proc/stat ]; then
+  boot_epoch="$(awk '/^btime/ {print $2}' /proc/stat)"
+  if [ -n "${boot_epoch:-}" ]; then
+    released="$(node dist/cli.js prune --stale-before "$(date -u -d "@$boot_epoch" +%Y-%m-%dT%H:%M:%SZ)" 2>/dev/null \
+      | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const r=JSON.parse(s).released||[];if(r.length)console.log(r.map(x=>`${x.repo}#${x.prNumber}`).join(", "))}catch{}})')"
+    [ -n "$released" ] && echo "released routes left by a previous boot: $released"
+  fi
+fi
+
 # The dispatcher's repo allowlist is fixed at startup, so a repo it was not started with
 # means restarting it. Forwarders are left alone: they reconnect to the same port.
 allowlist_covers_repo() { [ -f "$RUN_DIR/allowlist" ] && grep -qxF "$REPO" "$RUN_DIR/allowlist"; }

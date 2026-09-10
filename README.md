@@ -48,6 +48,23 @@ Nothing else is assumed about the machine. There is no daemon to register, no po
 open, and no reverse proxy: the dispatcher binds `127.0.0.1` and GitHub reaches it
 through `gh webhook forward`.
 
+### Starting on boot
+
+Nothing runs after a restart unless you ask for it, and a stopped dispatcher drops events
+silently. To have it come back on its own:
+
+```
+sudo pr-channel service install    # systemd unit, enabled at boot
+sudo pr-channel service remove
+```
+
+It brings up every repo listed in `~/.claude-pr-channel/repos`. `pr-channel boot` does the
+same by hand.
+
+Routes do not survive a restart in a useful sense — the session holding them died with the
+machine — so `up` releases any route last touched before the current boot. Without that,
+the next session on that PR is refused with `conflict` for a session that no longer exists.
+
 ### Updating
 
 ```

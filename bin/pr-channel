@@ -7,6 +7,8 @@
 #   pr-channel status ...             show routes
 #   pr-channel stop                   stop everything and remove the webhooks it created
 #   pr-channel config                 show the config file and the values in effect
+#   pr-channel boot                   bring up every repo recorded in the run directory
+#   pr-channel service install|remove start on boot via systemd
 #   pr-channel update                 pull the latest code and reinstall
 #   pr-channel channel                run the Claude Code channel server (spawned by Claude Code)
 set -euo pipefail
@@ -50,6 +52,8 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   channel) exec node "$ROOT/dist/channel/channel-bin.js" "$@" ;;
   up)     exec "$ROOT/scripts/pr-channel-up.sh" "$@" ;;
+  boot)   exec "$ROOT/scripts/boot.sh" "$@" ;;
+  service) exec "$ROOT/scripts/install-service.sh" "$@" ;;
   update) exec "$ROOT/scripts/update.sh" "$@" ;;
   stop)  exec "$ROOT/scripts/stop-local.sh" "$@" ;;
   status)
