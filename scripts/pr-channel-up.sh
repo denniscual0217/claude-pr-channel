@@ -39,7 +39,7 @@ mapfile -t REPOS < <(grep -v '^[[:space:]]*$' "$RUN_DIR/repos" | sort -u)
 export PR_CHANNEL_REPO_ALLOWLIST="$(IFS=,; echo "${REPOS[*]}")"
 
 cd "$ROOT"
-npm run build >/dev/null
+pnpm run build >/dev/null
 
 # Nothing survives a restart, so a route last touched before this boot is held by a
 # session that no longer exists. Release those, or the next session on that PR is refused

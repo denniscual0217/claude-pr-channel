@@ -7,12 +7,13 @@ cd "$ROOT"
 command -v node >/dev/null || { echo "node is required (v24+, for node:sqlite)" >&2; exit 1; }
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
 [ "$NODE_MAJOR" -ge 24 ] || { echo "node 24+ required, found $(node -v) (node:sqlite)" >&2; exit 1; }
+command -v pnpm >/dev/null || { echo "pnpm is required: run 'corepack enable pnpm'" >&2; exit 1; }
 command -v gh >/dev/null || { echo "the GitHub CLI (gh) is required" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "run: gh auth login" >&2; exit 1; }
 gh extension list 2>/dev/null | grep -q gh-webhook || gh extension install cli/gh-webhook
 
-npm install --silent
-npm run build >/dev/null
+pnpm install --silent
+pnpm run build >/dev/null
 
 # Override with PR_CHANNEL_BIN_DIR to install somewhere else.
 if [ -n "${PR_CHANNEL_BIN_DIR:-}" ]; then BIN="$PR_CHANNEL_BIN_DIR"; mkdir -p "$BIN"

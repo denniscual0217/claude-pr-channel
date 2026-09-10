@@ -35,6 +35,7 @@ message rather than half-installing.
 | Need | Why | Check |
 | --- | --- | --- |
 | **Node 24+** | The store uses the built-in `node:sqlite` | `node -v` |
+| **pnpm** | Package manager — `corepack enable pnpm` | `pnpm -v` |
 | **GitHub CLI, logged in** | Creates and forwards the webhook | `gh auth status` |
 | **`cli/gh-webhook` extension** | Webhook forwarding — the installer adds it | `gh extension list` |
 | **Admin on the target repo** | Creating a webhook requires it | `gh api repos/OWNER/NAME --jq .permissions.admin` |
@@ -212,6 +213,6 @@ the dispatcher's environment instead.
 ## Development
 
 ```
-npm test           # 291 tests
-npm run typecheck
+pnpm test          # 285 tests
+pnpm run typecheck
 ```

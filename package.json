@@ -1,6 +1,7 @@
 {
   "name": "claude-pr-channel",
   "version": "0.1.0",
+  "packageManager": "pnpm@12.3.4",
   "private": true,
   "description": "Local GitHub PR event dispatcher and per-session MCP channel for Claude Code workers",
   "type": "module",
