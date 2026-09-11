@@ -25,7 +25,12 @@ Launch a session with the plugin and the development-channels flag. A private pl
 not on the approved channels allowlist, so `--channels` alone will not load it:
 
 ```
-claude --plugin-dir /path/to/claude-pr-channel --dangerously-load-development-channels plugin:pr-channel@inline
+# once per machine
+claude plugin marketplace add /path/to/claude-pr-channel
+claude plugin install pr-channel@pr-channel-local
+
+# per session, in the PR's worktree
+claude --dangerously-load-development-channels plugin:pr-channel@pr-channel-local
 ```
 
 The session's banner should mention `messages from server:pr-channel inject directly in

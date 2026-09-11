@@ -1,0 +1,11 @@
+{
+  "name": "pr-channel-local",
+  "owner": { "name": "denniscual0217" },
+  "plugins": [
+    {
+      "name": "pr-channel",
+      "source": "./",
+      "description": "Binds one Claude Code session to one GitHub pull request."
+    }
+  ]
+}
