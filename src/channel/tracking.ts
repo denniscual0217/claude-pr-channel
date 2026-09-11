@@ -83,6 +83,10 @@ interface ActiveTracking {
   readonly ciEvents: CiEvents;
   readonly commentAuthors: ReadonlySet<string> | null;
   readonly startedAtIso: string;
+  // Set the moment tear-down begins. The restart callbacks are bound to the tracking they
+  // were created for rather than to whatever is current, so a restart waking inside
+  // listener.stop() cannot spawn a gh that the tear-down has already stopped watching.
+  torn: boolean;
   // The repository's cli hooks as they were immediately before gh was last launched.
   // Mutable: gh creates a new hook on every launch, so what counts as new is re-measured
   // before each one.
@@ -219,6 +223,10 @@ export class Tracking {
     const snapshot = { ids: new Set((await this.#listHooks(prRef.repo)).map((hook) => hook.id)) };
     janitor.send({ snapshot: [...snapshot.ids] });
 
+    // Assigned once the tracking object exists; the restart callbacks hold this one,
+    // not whatever happens to be current when they fire.
+    let bound: ActiveTracking | null = null;
+
     const forwarder = createForwarder({
       repo: prRef.repo,
       events: [...ALLOWED_GITHUB_EVENTS],
@@ -290,6 +298,7 @@ export class Tracking {
     pipelineRef.current = pipeline;
 
     const active: ActiveTracking = {
+      torn: false,
       prRef,
       pr,
       head,
@@ -307,6 +316,7 @@ export class Tracking {
       hookId: null,
       secret,
     };
+    bound = active;
     this.#active = active;
 
     try {
@@ -451,6 +461,7 @@ export class Tracking {
   // Order is the contract: the listener stops first so nothing is half-processed, gh
   // next so it cannot recreate anything, and only then is the hook deleted.
   async #teardown(active: ActiveTracking, options: { deleteHooks: boolean }): Promise<TeardownOutcome> {
+    active.torn = true;
     if (this.#active === active) this.#active = null;
     await active.listener.stop();
     await active.forwarder.stop();

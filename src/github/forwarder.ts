@@ -120,6 +120,10 @@ export function createForwarder(options: ForwarderOptions): Forwarder {
 
     if (outcome !== 'connected') {
       state = 'dead';
+      // A launch that timed out is still running: it created its webhook and is dialling.
+      // Left alive it outlives every tear-down, unknown to stop(), the marker and the
+      // janitor, and keeps a hook pointed at a port nobody is listening on.
+      if (outcome === 'timeout') await killHandle(handle);
       throw new ForwarderError(
         outcome === 'timeout'
           ? `gh webhook forward did not report "${CONNECT_LINE}" within ${connectTimeoutMs} ms`
@@ -176,6 +180,14 @@ export function createForwarder(options: ForwarderOptions): Forwarder {
       }
     }
     state = 'dead';
+  }
+
+  // The same sequence stop() uses: ask, then insist. Used by any path that abandons a
+  // launch, so no gh ever escapes a tear-down.
+  async function killHandle(handle: ChildHandle): Promise<void> {
+    handle.kill('SIGTERM');
+    const killed = await Promise.race([handle.exited.then(() => true), wait(2_000).then(() => false)]);
+    if (!killed) handle.kill('SIGKILL');
   }
 
   return {
