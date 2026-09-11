@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import type { ChannelDb } from '../store/db.js';
 import type { PrEvent } from '../types.js';
 import { prKey } from '../types.js';
 
@@ -22,41 +21,45 @@ export interface LogicalDuplicate {
 
 export interface DeliveryDeduperOptions {
   readonly logicalWindow?: number;
+  readonly deliveryWindow?: number;
 }
 
 // Two layers, deliberately different in strength:
 //
-// 1. Delivery IDs (X-GitHub-Delivery) are the durable, atomic layer. recordDeliveryOnce
-//    is a single INSERT OR IGNORE on a UNIQUE column, so concurrent identical deliveries
-//    across connections or processes collapse to exactly one acceptance.
+// 1. Delivery IDs (X-GitHub-Delivery) are the authoritative layer. One session owns one
+//    hook and reads it in one process, so a bounded insertion-ordered set is enough: a
+//    replay of an id still in the window is refused exactly once.
 //
 // 2. GitHub can also send the same logical state under fresh IDs (a check run reported
 //    twice, a comment edit that changed nothing, a redelivery from the UI). These are
 //    NOT dropped: a fresh ID may equally be a genuine repeat (a rerequested check that
-//    completed with the same result), and the queue is at-least-once with idempotent
-//    acks anyway. Instead the event's fingerprint is remembered in a bounded in-memory
-//    window and the earlier delivery ID is reported, so the dispatcher can log it and
-//    the consumer can collapse it. Best effort only; it does not survive a restart.
+//    completed with the same result). Instead the event's fingerprint is remembered in a
+//    bounded window and the earlier delivery ID is reported, so the pipeline can log it
+//    and the session can collapse it.
 export class DeliveryDeduper {
-  readonly #db: ChannelDb;
+  readonly #seenDeliveries = new Set<string>();
   readonly #seenFingerprints = new Map<string, string>();
   readonly #logicalWindow: number;
+  readonly #deliveryWindow: number;
 
-  constructor(db: ChannelDb, options: DeliveryDeduperOptions = {}) {
-    this.#db = db;
+  constructor(options: DeliveryDeduperOptions = {}) {
     this.#logicalWindow = options.logicalWindow ?? 5_000;
+    this.#deliveryWindow = options.deliveryWindow ?? 20_000;
   }
 
   accept(input: DeliveryInput): DedupeVerdict {
     const deliveryId = input.deliveryId?.trim() ?? '';
     if (deliveryId.length === 0) return { accepted: false, reason: 'missing_delivery_id' };
-    const fresh = this.#db.recordDeliveryOnce({
-      deliveryId,
-      eventName: input.eventName,
-      repo: input.repo,
-      ...(input.receivedAtIso !== undefined ? { receivedAtIso: input.receivedAtIso } : {}),
-    });
-    return fresh ? { accepted: true, deliveryId } : { accepted: false, reason: 'replayed_delivery', deliveryId };
+    if (this.#seenDeliveries.has(deliveryId)) {
+      return { accepted: false, reason: 'replayed_delivery', deliveryId };
+    }
+    this.#seenDeliveries.add(deliveryId);
+    while (this.#seenDeliveries.size > this.#deliveryWindow) {
+      const oldest = this.#seenDeliveries.values().next().value;
+      if (oldest === undefined) break;
+      this.#seenDeliveries.delete(oldest);
+    }
+    return { accepted: true, deliveryId };
   }
 
   noteLogicalState(event: PrEvent, deliveryId: string): LogicalDuplicate | null {

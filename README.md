@@ -1,218 +1,127 @@
-# Claude PR Event Channel
+# claude-pr-channel
 
-Delivers GitHub pull-request events into the Claude Code session working on that PR, so
-the session acts on them without being asked: a review comment gets addressed and
-answered, a red build gets fixed and pushed.
+A Claude Code **plugin** that binds one session to one GitHub pull request. The session's
+own MCP server owns a webhook for that PR, verifies every delivery, and pushes the events
+worth acting on straight into the conversation as `<channel source="pr-channel">` turns.
 
-No polling and no public endpoint — a real GitHub webhook is forwarded to a local
-dispatcher.
+There is no daemon, no database, and no machine-wide state. Tracking is a running
+process: when the session goes, the webhook goes with it.
 
-## How it works
-
-1. A local dispatcher receives webhook deliveries on `127.0.0.1`.
-2. It verifies `X-Hub-Signature-256` over the raw body before parsing anything.
-3. It normalizes and deduplicates the delivery, then routes it to the one session
-   registered for that PR, storing it durably.
-4. That session's channel — an MCP server Claude Code spawns for it — pushes the event in
-   as a `<channel>` event, and acks it only once the push lands.
-
-One channel is one `(repo, PR, session)`. Different PRs and different sessions are
-different channels; they run in parallel and cannot cross-talk.
+```
+claude (session) → bun server.ts (channel) → gh webhook forward
+                                           → bun src/github/janitor.ts
+```
 
 ## Install
 
-```
-git clone <this repo> claude-pr-channel && cd claude-pr-channel
-./scripts/install.sh
-```
-
-Builds, puts `pr-channel` on PATH, installs the Claude Code skill, and writes a config
-file. Re-run after pulling to update. It checks the prerequisites and fails with a clear
-message rather than half-installing.
-
-### Requirements
-
-| Need | Why | Check |
-| --- | --- | --- |
-| **Node 24+** | The store uses the built-in `node:sqlite` | `node -v` |
-| **pnpm** | Package manager — `corepack enable pnpm` | `pnpm -v` |
-| **GitHub CLI, logged in** | Creates and forwards the webhook | `gh auth status` |
-| **`cli/gh-webhook` extension** | Webhook forwarding — the installer adds it | `gh extension list` |
-| **Admin on the target repo** | Creating a webhook requires it | `gh api repos/OWNER/NAME --jq .permissions.admin` |
-| **Git** | The session commits and pushes | `git --version` |
-
-**You do not need to install SQLite.** The database is Node 24's built-in `node:sqlite`
-— no `sqlite3` package, no native module, no compiler or build toolchain. The only
-runtime dependencies are `@modelcontextprotocol/sdk` and `zod`, both pure JavaScript.
-
-Nothing else is assumed about the machine. There is no daemon to register, no port to
-open, and no reverse proxy: the dispatcher binds `127.0.0.1` and GitHub reaches it
-through `gh webhook forward`.
-
-### Starting on boot
-
-Nothing runs after a restart unless you ask for it, and a stopped dispatcher drops events
-silently. To have it come back on its own:
+Requires [Bun](https://bun.sh), the [GitHub CLI](https://cli.github.com) authenticated as
+a user with **admin** on the repository, and its webhook extension:
 
 ```
-sudo pr-channel service install    # systemd unit, enabled at boot
-sudo pr-channel service remove
+gh extension install cli/gh-webhook
 ```
 
-It brings up every repo listed in `~/.claude-pr-channel/repos`. `pr-channel boot` does the
-same by hand.
-
-Routes do not survive a restart in a useful sense — the session holding them died with the
-machine — so `up` releases any route last touched before the current boot. Without that,
-the next session on that PR is refused with `conflict` for a session that no longer exists.
-
-### Updating
+Launch a session with the plugin and the development-channels flag. A private plugin is
+not on the approved channels allowlist, so `--channels` alone will not load it:
 
 ```
-pr-channel update
+claude --plugin-dir /path/to/claude-pr-channel --dangerously-load-development-channels plugin:pr-channel@inline
 ```
 
-Pulls the branch you are on and reinstalls: CLI, skill, channel registration, and any
-config settings your file is missing. Pulling alone is not enough — the skill and the
-channel registration live outside the checkout, so they only change when you reinstall.
-
-Restart any open sessions afterwards: a session loads the skill and attaches its channel
-at startup.
-
-### Removing
-
-```
-./scripts/uninstall.sh           # stop everything, remove webhooks, CLI, skill, channel
-./scripts/uninstall.sh --purge   # and delete the database, config and secret
-```
+The session's banner should mention `messages from server:pr-channel inject directly in
+this session`. Without that line, nothing will ever arrive.
 
 ## Use
 
-Start the session with the channel attached, inside the checkout for the PR:
+The plugin's skills are namespaced by its name:
 
-```
-claude --dangerously-load-development-channels server:pr-channel
-```
+- `/pr-channel:track 3053` — or a PR URL, `owner/name#3053`, or nothing at all to use the
+  PR for the current branch.
+- `/pr-channel:untrack` — stop, and delete the webhook.
 
-Then:
+Behind those, the channel server exposes three tools:
 
-```
-/pr-channel 123        # bind this session to PR 123
-/pr-channel stop       # unsubscribe
-```
-
-That is the whole workflow. The skill starts the dispatcher if needed, creates the
-repo's webhook, picks the worktree holding that branch (creating one if none does), and
-registers the session.
-
-When you are done:
-
-```
-pr-channel stop        # releases every route, stops everything, removes its webhooks
-```
-
-`pr-channel up <owner/repo>`, `register`, `deregister` and `status` are available if you
-would rather drive it by hand.
-
-## What reaches your session
-
-Subscribed webhook events: `issue_comment`, `pull_request`, `pull_request_review`,
-`pull_request_review_comment`, `check_run`, `workflow_run`. Everything else GitHub emits
-is never sent here at all.
-
-Of those, a session is only interrupted for what it can act on:
-
-| Delivered | Suppressed |
+| tool | what it does |
 | --- | --- |
-| A comment, review or inline review comment from an allowed author | Your own `**Claude:**` replies, reviews with an empty body, and **people** outside `PR_CHANNEL_COMMENT_AUTHORS` — answering a colleague is the author's job |
-| Reviews from **automated reviewers** (CodeRabbit and the like), which are feedback on this PR | Nothing, unless `PR_CHANNEL_BOT_COMMENTS=ignore` |
-| A check that **finished** | `queued` and `in_progress` transitions — a push with twenty checks fires forty of these and none say anything actionable |
-| All required checks green (derived once per head) | The individual successes that add up to it |
-| `Build Temploy Image` **succeeding** — the go-ahead for work that needs the image | A Temploy build **failing**, its pending states, and every other workflow |
-| PR opened, synchronized, ready for review, converted to draft, reopened, closed, merged | Labels, assignments, review requests, edits |
+| `track` | Resolve the PR with `gh`, generate a webhook secret in memory, start a loopback listener on an ephemeral port, spawn `gh webhook forward`, confirm the hook id, and begin delivering. Blocks until the hook is confirmed, so success means events are flowing. |
+| `untrack` | Stop the listener and the forwarder, delete the webhook, and report the counters. |
+| `status` | Report the PR, head sha, hook id, the **live** forwarder state, the listener port and the delivery counters. `verify: true` also asks GitHub whether the hook still exists. |
 
-`PR_CHANNEL_CI_EVENTS` tunes the CI rule: `completed` (default) delivers every finished
-check, `failures` narrows it to the ones that finished badly, `all` reinstates the pending
-transitions. Suppressed events are still queued and acked — they are recorded, they just
-do not interrupt.
+`track` accepts `pr`, `repo`, `ci_events`, `required_checks`, `comment_authors`,
+`bot_comments` and `replace`.
 
-On a repo with many checks, `completed` still means one interruption per check per push.
-`failures` cuts that to the ones you can act on, plus the single all-required-green.
+## What is delivered
 
-## What it delivers
+Only what a session can act on. Everything else is counted and dropped.
 
-PR conversation comments, reviews, inline review comments, CI check results, the
-`Build Temploy Image` workflow state, and PR lifecycle changes (opened, synchronized,
-ready for review, converted to draft, reopened, closed, merged).
-
-Not delivered: bot comments, reviews submitted with an empty body, the session's own
-replies, and comments from anyone outside `PR_CHANNEL_COMMENT_AUTHORS`.
+| event | delivered |
+| --- | --- |
+| PR comment, review, inline review comment | Yes, unless the author is outside `comment_authors` (default: the `gh` login) or the body starts with `**Claude:**` |
+| Review with no body | No — it is the envelope around inline comments that arrive on their own |
+| CI check | `completed` (default) every finished check; `failures` only the ones that finished badly; `all` every transition |
+| All required checks green | Derived from `required_checks`, announced once per head |
+| Temploy image build | Only a successful one; a failure is not this session's to chase |
+| PR lifecycle (opened, synchronize, draft, ready, closed, merged) | Yes; `closed`/`merged` is delivered and then stops tracking |
+| Anything for another PR in the repo | No — counted as `dropped_other_pr` |
+| A green for a head the PR has already left | Delivered as history, flagged stale, never as a green light |
 
 ## Safety
 
-- The signature is verified over the raw body with a timing-safe comparison before the
-  payload is parsed, stored or logged.
-- **`PR_CHANNEL_COMMENT_AUTHORS`** is a trust boundary, not a filter: acting on a comment
-  means pushing code, so only these logins can drive a session. Defaults to the
-  authenticated `gh` user. CI results are never gated by it.
-- Events arrive in the session you launched, so they run with **that session's own
-  permission mode** — this service no longer constrains it. Untrusted comment text reaches
-  a session with your permissions, so do not run a PR-bound session with
-  `--dangerously-skip-permissions`.
-- Comment and review text is carried as clearly-labelled untrusted data, fenced with the
-  event id so it cannot impersonate the service.
-- An event for a superseded head is flagged stale and can never report the current head
-  as green.
-- The server binds loopback only; the webhook secret is never logged or committed.
+- The listener binds `127.0.0.1:0`. Nothing off this machine can reach it.
+- Every delivery is HMAC-verified against a secret generated per `track`, over the raw
+  bytes, before anything parses the body. The secret is never written to a file, a log or
+  a marker; `gh webhook forward` takes it on its own argv, which is visible in `ps` to
+  local users and cannot be avoided without replacing gh-webhook.
+- A delivery for any repository but the tracked one is refused with 403.
+- Comment and review text reaches the model fenced and labelled untrusted.
+
+## Cleanup
+
+Every path leaves nothing behind, and every delete is idempotent — a 404 counts as done.
+
+| what happens | what cleans up |
+| --- | --- |
+| `untrack`, or the PR is merged or closed | The channel: listener, `gh`, DELETE hook, marker removed |
+| Session exits, stdin closes, SIGTERM/SIGINT/SIGHUP (including `tmux kill-session`) | The channel, same sequence |
+| The channel is SIGKILLed | The janitor: its stdin pipe closes and its parent pid changes, so it kills `gh` and deletes the hook |
+| The channel **and** the janitor are killed together, or the machine crashes | The next `track` on this machine: it sweeps the markers left behind |
+
+Markers live under `${XDG_CACHE_HOME:-~/.cache}/claude-pr-channel/hooks/`. They name the
+hook, the `gh` pid and the janitor pid, and nothing else — never a secret. The sweep only
+ever touches a hook that has a marker whose janitor is dead, which is what keeps it from
+disturbing another live session, another machine, or a hook a person created by hand.
+
+## What is intentionally not recovered
+
+- **Events from before `track`.** Nothing is replayed; look them up with `gh` if they
+  matter.
+- **Events during a forwarder restart.** There is no queue. A restart window loses what
+  arrives in it, and `status` shows `restarting`.
+- **A failed push into the session.** Counted as `notify_failed`, never retried.
+- **Two sessions on one PR.** Both are tracked, both get everything, and neither knows
+  about the other.
 
 ## Configuration
 
-Settings live in `~/.claude-pr-channel/config` as `KEY=VALUE` lines, created by the
-installer with everything commented out. Every subcommand reads it, so the dispatcher and
-the registration CLI can never disagree.
+Tool arguments win; these are the defaults.
 
-```
-# ~/.claude-pr-channel/config
-PR_CHANNEL_COMMENT_AUTHORS=your-login
-```
-
-Anything already in the environment wins, so a one-off override works too:
-
-```
-PR_CHANNEL_PORT=9001 pr-channel up owner/repo
-```
-
-`pr-channel config` prints the file and the values in effect.
-
-Every path is configurable; the defaults keep all state out of the repo.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PR_CHANNEL_RUN_DIR` | `~/.claude-pr-channel` | Database, webhook secret, logs, run state |
-| `PR_CHANNEL_DB_PATH` | `$PR_CHANNEL_RUN_DIR/channel.db` | SQLite file (absolute, so the CLI and dispatcher always agree) |
-| `PR_CHANNEL_BIN_DIR` | `/usr/local/bin` or `~/.local/bin` | Where `install.sh` links `pr-channel` |
-| `PR_CHANNEL_SKILL_DIR` | `~/.claude/skills` | Where `install.sh` installs the skill |
-| `PR_CHANNEL_PORT` | `8787` | Dispatcher port on `127.0.0.1` |
-| `PR_CHANNEL_COMMENT_AUTHORS` | authenticated `gh` user | Logins whose comments may drive a session |
-| `PR_CHANNEL_REQUIRED_CHECKS` | — | Check names that make up "all required green" |
-| `PR_CHANNEL_BOT_COMMENTS` | `handle` | `ignore` drops automated reviewers as well |
-| `PR_CHANNEL_CI_EVENTS` | `completed` | Which CI events interrupt a session: `completed`, `failures`, `all` |
-| `PR_CHANNEL_REPO_ALLOWLIST` | repos you registered | Repositories the dispatcher accepts |
-| `PR_CHANNEL_LEASE_TIMEOUT_MS` | `60000` | How long an unacked event stays hidden before redelivery |
-| `GITHUB_WEBHOOK_SECRET` | generated per machine | HMAC secret, kept `0600` in the run directory |
-
-## Out of scope
-
-Public deployment, TLS termination, and reverse-proxy or systemd configuration. Webhook
-delivery uses `gh webhook forward`, which needs no inbound port.
-
-Note that `gh webhook forward` takes the secret on its command line, where local users
-can read it via `ps`. A deployed webhook keeps the secret in GitHub's configuration and
-the dispatcher's environment instead.
+| variable | meaning |
+| --- | --- |
+| `PR_CHANNEL_COMMENT_AUTHORS` | Logins whose comments may reach the session. Default: the `gh` login at `track` time |
+| `PR_CHANNEL_BOT_COMMENTS` | `handle` (default) or `ignore` |
+| `PR_CHANNEL_CI_EVENTS` | `completed` (default), `failures`, `all` |
+| `PR_CHANNEL_REQUIRED_CHECKS` | Comma-separated check names for all-required-green |
+| `PR_CHANNEL_MAX_PAYLOAD_BYTES` | Delivery size cap, default 1 MiB |
+| `PR_CHANNEL_RATE_LIMIT_MAX` / `_WINDOW_MS` | Signed deliveries per window, default 120/60s |
+| `PR_CHANNEL_CACHE_DIR` | Marker directory override (used by the tests) |
+| `PR_CHANNEL_SWEEP` | `off` skips the startup sweep |
 
 ## Development
 
 ```
-pnpm test          # 285 tests
-pnpm run typecheck
+bun install
+bun test
 ```
+
+The suite is offline. `test/setup.ts` puts a `gh` shim first on `PATH` and the shim exits
+99 unless a test configured it, so no test can reach GitHub.

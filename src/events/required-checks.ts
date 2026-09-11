@@ -1,90 +1,112 @@
-import type { ChannelDb } from '../store/db.js';
-import type { CheckState, CiAllRequiredGreenEvent, PrEvent, PrRef } from '../types.js';
+import type { CheckState, CiAllRequiredGreenEvent, PrEvent } from '../types.js';
 import { isGreen } from '../types.js';
 
 export interface RequiredChecksTrackerOptions {
-  readonly maxTrackedHeadsPerPr?: number;
+  readonly maxTrackedHeads?: number;
+}
+
+interface AnnouncedGreen {
+  readonly signature: string;
+  readonly headConfirmed: boolean;
+}
+
+interface HeadRecord {
+  readonly states: Map<string, { state: CheckState; observedAtIso: string }>;
+  announced: AnnouncedGreen | null;
 }
 
 // GitHub never says which checks a branch rule requires, so "all required green" is
-// derived from the configured list and the check states seen per (PR, head). Those states
-// and the announcement live in SQLite because the contract promises the derived event
-// unconditionally: a dispatcher that restarts halfway through a CI run must still complete
-// the set from the greens already banked, which no amount of process memory survives.
+// derived from the configured list and the check states seen per head. One session
+// tracks one PR for as long as it runs, so the states live in memory: there is no
+// restart to survive, and tracking that stopped has nothing left to derive.
 export class RequiredChecksTracker {
-  readonly #db: ChannelDb;
   readonly #required: readonly string[];
   readonly #signature: string;
-  readonly #maxTrackedHeadsPerPr: number;
+  readonly #maxTrackedHeads: number;
+  readonly #heads = new Map<string, HeadRecord>();
 
-  constructor(db: ChannelDb, requiredChecks: Iterable<string>, options: RequiredChecksTrackerOptions = {}) {
-    this.#db = db;
+  constructor(requiredChecks: Iterable<string>, options: RequiredChecksTrackerOptions = {}) {
     this.#required = [...new Set([...requiredChecks].map((name) => name.trim()).filter((name) => name.length > 0))];
     this.#signature = [...this.#required].sort().join('\n');
-    this.#maxTrackedHeadsPerPr = options.maxTrackedHeadsPerPr ?? 100;
+    this.#maxTrackedHeads = options.maxTrackedHeads ?? 100;
   }
 
   get requiredChecks(): readonly string[] {
     return this.#required;
   }
 
-  // currentHeadSha is the head the registry holds after this event was applied. A check
-  // can arrive before the lifecycle delivery that makes its head current, so a head
-  // becoming current is a second chance to derive the green for it.
+  // currentHeadSha is the head held after this event was applied. A check can arrive
+  // before the lifecycle delivery that makes its head current, so a head becoming current
+  // is a second chance to derive the green for it.
   observe(event: PrEvent, currentHeadSha: string | null): CiAllRequiredGreenEvent | null {
     if (event.kind === 'pr_lifecycle') {
-      return currentHeadSha === null ? null : this.#derive(event.prRef, currentHeadSha, event, currentHeadSha);
+      return currentHeadSha === null ? null : this.#derive(currentHeadSha, event, currentHeadSha);
     }
     if (event.kind !== 'ci_check') return null;
-    this.#db.recordCheckState(event.prRef, event.headSha, event.checkName, event.state, event.occurredAtIso);
-    this.#db.pruneCheckHeads(event.prRef, this.#maxTrackedHeadsPerPr);
-    return this.#derive(event.prRef, event.headSha, event, currentHeadSha);
+    this.#record(event.headSha, event.checkName, event.state, event.occurredAtIso);
+    return this.#derive(event.headSha, event, currentHeadSha);
   }
 
-  states(prRef: PrRef, headSha: string): ReadonlyMap<string, CheckState> {
-    return this.#db.checkStates(prRef, headSha);
+  states(headSha: string): ReadonlyMap<string, CheckState> {
+    const record = this.#heads.get(headSha);
+    const states = new Map<string, CheckState>();
+    if (!record) return states;
+    for (const [name, entry] of record.states) states.set(name, entry.state);
+    return states;
   }
 
-  forget(prRef: PrRef): void {
-    this.#db.forgetCheckStates(prRef);
+  forget(): void {
+    this.#heads.clear();
   }
 
-  #derive(
-    prRef: PrRef,
-    headSha: string,
-    source: PrEvent,
-    currentHeadSha: string | null,
-  ): CiAllRequiredGreenEvent | null {
+  #record(headSha: string, checkName: string, state: CheckState, observedAtIso: string): void {
+    const record = this.#head(headSha);
+    const previous = record.states.get(checkName);
+    // Newer wins. GitHub can redeliver an older success after a newer failure; taking the
+    // last writer would turn a red head green.
+    if (previous !== undefined && !supersedes(observedAtIso, previous.observedAtIso)) return;
+    record.states.set(checkName, { state, observedAtIso });
+  }
+
+  #head(headSha: string): HeadRecord {
+    let record = this.#heads.get(headSha);
+    if (record === undefined) {
+      record = { states: new Map(), announced: null };
+      this.#heads.set(headSha, record);
+    }
+    // Bounds what one long-lived PR can accumulate, oldest head first.
+    while (this.#heads.size > this.#maxTrackedHeads) {
+      const oldest = this.#heads.keys().next().value;
+      if (oldest === undefined || oldest === headSha) break;
+      this.#heads.delete(oldest);
+    }
+    return record;
+  }
+
+  #derive(headSha: string, source: PrEvent, currentHeadSha: string | null): CiAllRequiredGreenEvent | null {
     if (this.#required.length === 0) return null;
-    const states = this.#db.checkStates(prRef, headSha);
-    const announced = this.#db.announcedChecks(prRef, headSha);
-    const allGreen = this.#required.every((name) => {
-      const state = states.get(name);
-      return state !== undefined && isGreen(state);
-    });
+    const record = this.#heads.get(headSha);
+    const states = record?.states;
+    const allGreen =
+      states !== undefined &&
+      this.#required.every((name) => {
+        const entry = states.get(name);
+        return entry !== undefined && isGreen(entry.state);
+      });
     if (!allGreen) {
-      if (announced !== null) this.#db.setAnnouncedChecks(prRef, headSha, null);
+      if (record?.announced != null) record.announced = null;
       return null;
     }
     // A green for a head that is not the current one reaches the session suppressed --
     // history, never a green light -- so it does not spend the once-per-head
     // announcement. The head becoming current is when that announcement is really owed.
     const headConfirmed = headSha === currentHeadSha;
-    if (announced?.signature === this.#signature) {
-      if (announced.headConfirmed || !headConfirmed) return null;
-      // A copy the session has not been handed yet is the announcement: poll time
-      // re-evaluates staleness against the head known then, so it arrives confirmed. One
-      // already delivered cannot be corrected -- the session handles it as it stands and
-      // acks it -- so the announcement is still owed, duplicate or not.
-      if (this.#db.hasUndeliveredEventForHead(prRef, headSha, 'ci_all_required_green')) {
-        this.#db.setAnnouncedChecks(prRef, headSha, { signature: this.#signature, headConfirmed: true });
-        return null;
-      }
-    }
-    this.#db.setAnnouncedChecks(prRef, headSha, { signature: this.#signature, headConfirmed });
+    const announced = (record as HeadRecord).announced;
+    if (announced?.signature === this.#signature && (announced.headConfirmed || !headConfirmed)) return null;
+    (record as HeadRecord).announced = { signature: this.#signature, headConfirmed };
     return {
       kind: 'ci_all_required_green',
-      prRef,
+      prRef: source.prRef,
       headSha,
       actorLogin: source.actorLogin,
       occurredAtIso: source.occurredAtIso,
@@ -92,4 +114,11 @@ export class RequiredChecksTracker {
       checkNames: [...this.#required],
     };
   }
+}
+
+function supersedes(incomingAtIso: string, storedAtIso: string): boolean {
+  const incoming = Date.parse(incomingAtIso);
+  const stored = Date.parse(storedAtIso);
+  if (Number.isNaN(incoming) || Number.isNaN(stored)) return true;
+  return incoming >= stored;
 }

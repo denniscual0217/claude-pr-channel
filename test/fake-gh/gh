@@ -1,0 +1,4 @@
+#!/bin/sh
+# Test-only stand-in for the gh CLI. FAKE_GH_BUN is the exact bun binary running the
+# suite, so the shim never depends on where bun happens to be on PATH.
+exec "${FAKE_GH_BUN:-bun}" "$(dirname "$0")/gh-impl.mjs" "$@"

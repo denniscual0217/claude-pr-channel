@@ -1,4 +1,3 @@
-import type { ChannelDb } from '../store/db.js';
 import type { EventEnvelope, PrRef } from '../types.js';
 import { isPositiveHeadSignal } from '../types.js';
 
@@ -18,8 +17,8 @@ export interface DeliveredEvent {
   readonly payload: EventEnvelope['payload'];
 }
 
-// Staleness is decided against the head the route holds now, not the one recorded when
-// the event was queued: a head can advance between queueing and delivery.
+// Staleness is decided against the head held now, not the one recorded when the event
+// was normalized: a head can advance between the two.
 export function describeEvent(envelope: EventEnvelope, currentHeadSha: string | null): DeliveredEvent {
   const comparable = envelope.kind !== 'pr_lifecycle' && envelope.headSha !== null;
   const stale =
@@ -38,8 +37,4 @@ export function describeEvent(envelope: EventEnvelope, currentHeadSha: string | 
     receivedAtIso: envelope.receivedAtIso,
     payload: envelope.payload,
   };
-}
-
-export function routeHeadSha(db: ChannelDb, prRef: PrRef): string | null {
-  return db.getRoute(prRef)?.headSha ?? null;
 }

@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
-import { WebhookSecret } from '../config.js';
+import { describe, expect, it } from 'bun:test';
+import { WebhookSecret } from './secret.js';
 import { verifyWebhookSignature, type SignatureVerifier } from './signature.js';
 
 const FAKE_SECRET = 'test-only-fake-secret';

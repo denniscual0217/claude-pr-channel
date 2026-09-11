@@ -1,36 +1,23 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
-import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { inspect } from 'node:util';
 import type { BotComments } from './events/normalize.js';
+import type { CiEvents } from './channel/filter.js';
 
 export const ENV = {
-  host: 'PR_CHANNEL_HOST',
-  port: 'PR_CHANNEL_PORT',
-  repoAllowlist: 'PR_CHANNEL_REPO_ALLOWLIST',
   commentAuthors: 'PR_CHANNEL_COMMENT_AUTHORS',
   botComments: 'PR_CHANNEL_BOT_COMMENTS',
+  ciEvents: 'PR_CHANNEL_CI_EVENTS',
+  requiredChecks: 'PR_CHANNEL_REQUIRED_CHECKS',
   maxPayloadBytes: 'PR_CHANNEL_MAX_PAYLOAD_BYTES',
   rateLimitMax: 'PR_CHANNEL_RATE_LIMIT_MAX',
   rateLimitWindowMs: 'PR_CHANNEL_RATE_LIMIT_WINDOW_MS',
-  dbPath: 'PR_CHANNEL_DB_PATH',
-  leaseTimeoutMs: 'PR_CHANNEL_LEASE_TIMEOUT_MS',
-  requiredChecks: 'PR_CHANNEL_REQUIRED_CHECKS',
-  allowNonLoopback: 'PR_CHANNEL_ALLOW_NON_LOOPBACK',
-  webhookSecret: 'GITHUB_WEBHOOK_SECRET',
+  cacheDir: 'PR_CHANNEL_CACHE_DIR',
+  sweep: 'PR_CHANNEL_SWEEP',
 } as const;
 
 export const DEFAULTS = {
-  host: '127.0.0.1',
-  port: 8787,
   maxPayloadBytes: 1_048_576,
   rateLimitMax: 120,
   rateLimitWindowMs: 60_000,
-  // Absolute on purpose: the dispatcher runs from its own directory while the
-  // registration CLI runs from whatever checkout the worker is in. A relative default
-  // would give them two different databases and registration would silently go nowhere.
-  dbPath: join(homedir(), '.claude-pr-channel', 'channel.db'),
-  leaseTimeoutMs: 60_000,
+  ciEvents: 'completed',
 } as const;
 
 export interface RateLimit {
@@ -38,42 +25,20 @@ export interface RateLimit {
   readonly windowMs: number;
 }
 
-export interface ServiceConfig {
-  readonly host: string;
-  readonly port: number;
-  readonly repoAllowlist: ReadonlySet<string>;
+export interface Config {
   readonly maxPayloadBytes: number;
   readonly rateLimit: RateLimit;
-  readonly dbPath: string;
-  readonly leaseTimeoutMs: number;
   // GitHub payloads never say which checks a branch rule requires, so all-required-green
-  // is derived from this list. Empty means the dispatcher never announces it.
+  // is derived from this list. Empty means it is never announced.
   readonly requiredChecks: readonly string[];
+  readonly ciEvents: CiEvents;
   // Whose comments and reviews the session may act on. Anyone can write on a PR, and
-  // acting on a comment means pushing code, so this is a trust boundary, not a filter:
-  // a colleague's review should wait for a human. null means every human author is
-  // allowed, which is only appropriate on a repo where that is already true.
+  // acting on a comment means pushing code, so this is a trust boundary, not a filter.
+  // null means every human author, which track() narrows to the gh login by default.
   readonly commentAuthors: ReadonlySet<string> | null;
-  // An automated reviewer's comments are feedback on this PR, so they are handled like
-  // anyone else's. Set to 'ignore' if a bot turns out to narrate more than it reviews.
   readonly botComments: BotComments;
-}
-
-// Logins are compared lowercased: GitHub treats them case-insensitively and a payload
-// can carry either casing.
-function parseCommentAuthors(raw: string | undefined): ReadonlySet<string> | null {
-  if (raw === undefined) return null;
-  const logins = raw
-    .split(',')
-    .map((login) => login.trim().toLowerCase())
-    .filter((login) => login.length > 0);
-  return logins.length > 0 ? new Set(logins) : null;
-}
-
-function parseBotComments(raw: string | undefined): BotComments {
-  const value = (raw ?? 'handle').trim().toLowerCase();
-  if (value === 'handle' || value === 'ignore') return value;
-  throw new ConfigError(`${ENV.botComments} must be "handle" or "ignore"`);
+  readonly cacheDir: string | null;
+  readonly sweepEnabled: boolean;
 }
 
 export class ConfigError extends Error {
@@ -82,120 +47,63 @@ export class ConfigError extends Error {
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
-
-export function loadConfig(env: Env = process.env): ServiceConfig {
-  const host = (env[ENV.host] ?? DEFAULTS.host).trim();
-  const allowNonLoopback = env[ENV.allowNonLoopback] === 'true';
-  if (!LOOPBACK_HOSTS.has(host) && !allowNonLoopback) {
-    throw new ConfigError(
-      `${ENV.host}=${host} is not a loopback address; set ${ENV.allowNonLoopback}=true to bind it anyway`,
-    );
-  }
-
+export function loadConfig(env: Env = process.env): Config {
   return {
-    host,
-    port: intFromEnv(env, ENV.port, DEFAULTS.port, { min: 1, max: 65_535 }),
-    repoAllowlist: parseRepoAllowlist(env[ENV.repoAllowlist]),
-    commentAuthors: parseCommentAuthors(env[ENV.commentAuthors]),
-    botComments: parseBotComments(env[ENV.botComments]),
     maxPayloadBytes: intFromEnv(env, ENV.maxPayloadBytes, DEFAULTS.maxPayloadBytes, { min: 1 }),
     rateLimit: {
       maxDeliveries: intFromEnv(env, ENV.rateLimitMax, DEFAULTS.rateLimitMax, { min: 1 }),
       windowMs: intFromEnv(env, ENV.rateLimitWindowMs, DEFAULTS.rateLimitWindowMs, { min: 1 }),
     },
-    dbPath: resolve((env[ENV.dbPath] ?? DEFAULTS.dbPath).trim() || DEFAULTS.dbPath),
-    leaseTimeoutMs: intFromEnv(env, ENV.leaseTimeoutMs, DEFAULTS.leaseTimeoutMs, { min: 1 }),
     requiredChecks: parseRequiredChecks(env[ENV.requiredChecks]),
+    ciEvents: parseCiEvents(env[ENV.ciEvents]),
+    commentAuthors: parseCommentAuthors(env[ENV.commentAuthors]),
+    botComments: parseBotComments(env[ENV.botComments]),
+    cacheDir: (env[ENV.cacheDir] ?? '').trim() || null,
+    sweepEnabled: (env[ENV.sweep] ?? '').trim().toLowerCase() !== 'off',
   };
 }
 
-export function isRepoAllowed(config: ServiceConfig, repo: string): boolean {
-  return config.repoAllowlist.has(normalizeRepo(repo));
-}
-
-export function normalizeRepo(repo: string): string {
-  return repo.trim().toLowerCase();
-}
-
-export function describeConfig(config: ServiceConfig): Record<string, unknown> {
+// The secret is generated in memory and never reaches a description, a log or a marker.
+export function describeConfig(config: Config): Record<string, unknown> {
   return {
-    host: config.host,
-    port: config.port,
-    repoAllowlist: [...config.repoAllowlist],
-    commentAuthors: config.commentAuthors === null ? null : [...config.commentAuthors],
-    botComments: config.botComments,
     maxPayloadBytes: config.maxPayloadBytes,
     rateLimit: { ...config.rateLimit },
-    dbPath: config.dbPath,
-    leaseTimeoutMs: config.leaseTimeoutMs,
     requiredChecks: [...config.requiredChecks],
-    webhookSecret: '[redacted]',
+    ciEvents: config.ciEvents,
+    commentAuthors: config.commentAuthors === null ? null : [...config.commentAuthors],
+    botComments: config.botComments,
+    sweepEnabled: config.sweepEnabled,
   };
 }
 
-// The raw secret never leaves this class: callers get an HMAC or a verdict, not the value.
-export class WebhookSecret {
-  readonly #value: Buffer;
-
-  constructor(value: string) {
-    if (value.length === 0) throw new ConfigError(`${ENV.webhookSecret} is empty`);
-    this.#value = Buffer.from(value, 'utf8');
-  }
-
-  hmacSha256Hex(rawBody: Buffer): string {
-    return createHmac('sha256', this.#value).update(rawBody).digest('hex');
-  }
-
-  verifySignature256(rawBody: Buffer, headerValue: string | undefined): boolean {
-    if (typeof headerValue !== 'string' || !headerValue.startsWith('sha256=')) return false;
-    const expected = Buffer.from(this.hmacSha256Hex(rawBody), 'utf8');
-    const actual = Buffer.from(headerValue.slice('sha256='.length).toLowerCase(), 'utf8');
-    return expected.length === actual.length && timingSafeEqual(expected, actual);
-  }
-
-  toString(): string {
-    return '[WebhookSecret redacted]';
-  }
-
-  toJSON(): string {
-    return '[redacted]';
-  }
-
-  [inspect.custom](): string {
-    return this.toString();
-  }
-}
-
-export function loadWebhookSecret(env: Env = process.env): WebhookSecret {
-  const value = env[ENV.webhookSecret];
-  if (value === undefined || value.length === 0) {
-    throw new ConfigError(`${ENV.webhookSecret} is not set`);
-  }
-  return new WebhookSecret(value);
-}
-
-function parseRepoAllowlist(raw: string | undefined): ReadonlySet<string> {
-  const entries = (raw ?? '')
+// Logins are compared lowercased: GitHub treats them case-insensitively and a payload
+// can carry either casing.
+export function parseCommentAuthors(raw: string | undefined): ReadonlySet<string> | null {
+  if (raw === undefined) return null;
+  const logins = raw
     .split(',')
-    .map(normalizeRepo)
-    .filter((entry) => entry.length > 0);
-  if (entries.length === 0) {
-    throw new ConfigError(`${ENV.repoAllowlist} must list at least one owner/name repository`);
-  }
-  for (const entry of entries) {
-    if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(entry)) {
-      throw new ConfigError(`${ENV.repoAllowlist} entry "${entry}" is not of the form owner/name`);
-    }
-  }
-  return new Set(entries);
+    .map((login) => login.trim().toLowerCase())
+    .filter((login) => login.length > 0);
+  return logins.length > 0 ? new Set(logins) : null;
 }
 
-function parseRequiredChecks(raw: string | undefined): readonly string[] {
+export function parseBotComments(raw: string | undefined): BotComments {
+  const value = (raw ?? 'handle').trim().toLowerCase();
+  if (value === 'handle' || value === 'ignore') return value;
+  throw new ConfigError(`${ENV.botComments} must be "handle" or "ignore"`);
+}
+
+export function parseCiEvents(raw: string | undefined): CiEvents {
+  const value = (raw ?? DEFAULTS.ciEvents).trim().toLowerCase();
+  if (value === 'failures' || value === 'completed' || value === 'all') return value;
+  throw new ConfigError(`${ENV.ciEvents} must be "failures", "completed" or "all"`);
+}
+
+export function parseRequiredChecks(raw: string | undefined): readonly string[] {
   return [...new Set((raw ?? '').split(',').map((name) => name.trim()).filter((name) => name.length > 0))];
 }
 
-function intFromEnv(
+export function intFromEnv(
   env: Env,
   name: string,
   fallback: number,
