@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { newEventId } from '../store/db.js';
+import { describe, expect, it } from 'bun:test';
+import { newEventId } from '../events/ids.js';
 import type { EnvelopeOf, PrEventKind, PrRef } from '../types.js';
 import { untrusted } from '../types.js';
 import { renderEventPrompt } from './prompt.js';
@@ -11,7 +11,6 @@ function envelope<K extends PrEventKind>(kind: K, payload: object, stale = false
     id: newEventId(),
     deliveryId: 'd-1',
     prRef: pr,
-    sessionId: 's1',
     receivedAtIso: '2026-09-08T10:00:00.000Z',
     headSha: 'a'.repeat(40),
     stale,

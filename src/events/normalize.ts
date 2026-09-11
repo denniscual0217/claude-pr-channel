@@ -1,4 +1,4 @@
-import { normalizeRepo } from '../config.js';
+import { normalizeRepo } from './repo.js';
 import type {
   CheckConclusion,
   CheckState,

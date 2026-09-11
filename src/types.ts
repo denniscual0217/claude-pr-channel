@@ -220,30 +220,10 @@ export const HEAD_SOURCES = ['registration', 'lifecycle'] as const;
 // GitHub lifecycle delivery outranks one asserted locally at registration.
 export type HeadSource = (typeof HEAD_SOURCES)[number];
 
-export interface SessionRoute {
-  readonly prRef: PrRef;
-  readonly sessionId: string;
-  readonly headSha: string | null;
-  readonly headSource: HeadSource | null;
-  // occurredAt of the lifecycle event that set the head, or the local clock of the
-  // registration that asserted it. Only a lifecycle stamp orders anything: it is what
-  // refuses lifecycle deliveries that arrive out of order.
-  readonly headEventAtIso: string | null;
-  readonly lifecycle: RouteLifecycleState;
-  readonly closed: boolean;
-  // Where the worker's checkout lives. A resumed session runs its tools in the
-  // directory the process is spawned in, not the one it was started in, so delivery
-  // has to supply it or Claude edits the wrong tree.
-  readonly workerDir: string | null;
-  readonly registeredAtIso: string;
-  readonly updatedAtIso: string;
-}
-
 interface EnvelopeBase {
   readonly id: string;
   readonly deliveryId: string;
   readonly prRef: PrRef;
-  readonly sessionId: string;
   readonly receivedAtIso: string;
   readonly headSha: string | null;
   readonly stale: boolean;
@@ -254,13 +234,3 @@ export type EventEnvelope = {
 }[PrEventKind];
 
 export type EnvelopeOf<K extends PrEventKind> = Extract<EventEnvelope, { kind: K }>;
-
-export type UnroutedReason = 'no_route' | 'route_closed' | 'session_mismatch';
-
-export interface UnroutedEvent {
-  readonly deliveryId: string;
-  readonly prRef: PrRef;
-  readonly receivedAtIso: string;
-  readonly reason: UnroutedReason;
-  readonly payload: PrEvent;
-}

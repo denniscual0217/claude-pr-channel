@@ -1,61 +1,12 @@
-import { PassThrough, Readable } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'bun:test';
 import { ALLOWED_GITHUB_EVENTS } from '../types.js';
 import {
-  allowedRepo,
   checkDeclaredLength,
   DeliveryRateLimiter,
   extractRepoFullName,
   isAllowedEventName,
   parseDeliveryId,
-  readBodyWithLimit,
 } from './limits.js';
-
-const tick = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
-
-describe('readBodyWithLimit', () => {
-  it('buffers a body within the cap byte-for-byte', async () => {
-    const source = Readable.from([Buffer.from('{"a":'), Buffer.from('1}')]);
-    const result = await readBodyWithLimit(source, 64);
-    expect(result).toEqual({ ok: true, body: Buffer.from('{"a":1}') });
-  });
-
-  it('accepts a body exactly at the cap', async () => {
-    const result = await readBodyWithLimit(Readable.from([Buffer.alloc(16, 0x41)]), 16);
-    expect(result.ok).toBe(true);
-  });
-
-  it('rejects mid-stream as soon as the cap is crossed, before the producer finishes', async () => {
-    const source = new PassThrough();
-    const pending = readBodyWithLimit(source, 100);
-    let settled = false;
-    void pending.then(() => (settled = true));
-
-    source.write(Buffer.alloc(60, 0x61));
-    await tick();
-    expect(settled).toBe(false);
-
-    source.write(Buffer.alloc(60, 0x62));
-    const result = await pending;
-    expect(result).toEqual({ ok: false, reason: 'too_large', bytesRead: 120 });
-    expect(source.isPaused()).toBe(true);
-
-    // The producer never ended the stream; later writes must not resurrect the promise.
-    source.write(Buffer.alloc(1000, 0x63));
-    source.end();
-    await tick();
-    expect(await pending).toEqual({ ok: false, reason: 'too_large', bytesRead: 120 });
-  });
-
-  it('reports an aborted stream instead of hanging', async () => {
-    const source = new PassThrough();
-    const pending = readBodyWithLimit(source, 100);
-    source.write(Buffer.from('partial'));
-    await tick();
-    source.destroy(new Error('socket hang up'));
-    expect(await pending).toEqual({ ok: false, reason: 'aborted', bytesRead: 7 });
-  });
-});
 
 describe('checkDeclaredLength', () => {
   it('passes absent or in-range lengths and flags oversized or malformed ones', () => {
@@ -88,13 +39,6 @@ describe('event and repo allowlists', () => {
     expect(extractRepoFullName(null)).toBeNull();
   });
 
-  it('matches the allowlist case-insensitively and rejects everything else', () => {
-    const allowlist = new Set(['toptal/repo']);
-    expect(allowedRepo(allowlist, 'Toptal/Repo')).toBe('toptal/repo');
-    expect(allowedRepo(allowlist, 'toptal/other')).toBeNull();
-    expect(allowedRepo(allowlist, 'evil/toptal/repo')).toBeNull();
-    expect(allowedRepo(allowlist, null)).toBeNull();
-  });
 });
 
 describe('parseDeliveryId', () => {
