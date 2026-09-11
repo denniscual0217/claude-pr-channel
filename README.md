@@ -82,14 +82,27 @@ Every path leaves nothing behind, and every delete is idempotent — a 404 count
 | what happens | what cleans up |
 | --- | --- |
 | `untrack`, or the PR is merged or closed | The channel: listener, `gh`, DELETE hook, marker removed |
+| `gh` created a hook and died before anything confirmed it (a failed dial, a restart in progress) | The channel, at teardown and before every respawn: it lists the repository again and deletes the one hook that appeared since `gh` was launched |
 | Session exits, stdin closes, SIGTERM/SIGINT/SIGHUP (including `tmux kill-session`) | The channel, same sequence |
+| A DELETE fails (a blip during a restart is the common one) | Whoever gets there first: the id is kept, retried at the next respawn and at teardown, sent to the janitor, and named by the marker for the next sweep |
 | The channel is SIGKILLed | The janitor: its stdin pipe closes and its parent pid changes, so it kills `gh` and deletes the hook |
 | The channel **and** the janitor are killed together, or the machine crashes | The next `track` on this machine: it sweeps the markers left behind |
 
 Markers live under `${XDG_CACHE_HOME:-~/.cache}/claude-pr-channel/hooks/`. They name the
-hook, the `gh` pid and the janitor pid, and nothing else — never a secret. The sweep only
-ever touches a hook that has a marker whose janitor is dead, which is what keeps it from
-disturbing another live session, another machine, or a hook a person created by hand.
+hook, the `gh` pid, the janitor pid and any hook whose DELETE failed, and nothing else —
+never a secret. The sweep only ever touches a hook that has a marker whose janitor is
+dead, which is what keeps it from disturbing another live session, another machine, or a
+hook a person created by hand.
+
+Nothing is deleted that this session cannot show is its own. A ping signed with this
+session's secret is the proof; failing that, a single hook that appeared since `gh` was
+launched is unambiguous, because `gh` creates exactly one. Once a hook id is confirmed,
+that guess is never made again for the launch it belongs to: deleting the confirmed hook
+is the whole job, and anything else on the repository is another session's. When two or
+more unconfirmed hooks appeared, one of them may be another session's, so **none** is
+deleted: the ids are reported by `track` or `untrack` for a person to judge, with the
+`gh api -X DELETE` line to remove them. A hook left that way is a leak this session
+names; a hook deleted that way would silently stop another session's events.
 
 ## What is intentionally not recovered
 
@@ -99,7 +112,8 @@ disturbing another live session, another machine, or a hook a person created by 
   arrives in it, and `status` shows `restarting`.
 - **A failed push into the session.** Counted as `notify_failed`, never retried.
 - **Two sessions on one PR.** Both are tracked, both get everything, and neither knows
-  about the other.
+  about the other. Neither ever deletes the other's webhook, at the cost of leaving a
+  webhook it cannot prove is its own in place, named, for a person to remove.
 
 ## Configuration
 

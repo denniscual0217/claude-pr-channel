@@ -13,7 +13,9 @@ Stop tracking the pull request this session is bound to.
 
 2. Report what came back: the PR that was being tracked, the webhook id that was deleted,
    and the delivery counters. If nothing was being tracked, say so and stop — calling it
-   again is harmless.
+   again is harmless. A `Left in place:` line means hooks appeared on the repository that
+   this session could not prove were its own — one may belong to another live session, so
+   pass the line on as it stands and delete nothing on the user's behalf.
 
 3. On `hook_delete_failed`, the forwarder and listener are already stopped, so no further
    events arrive. The webhook itself could not be deleted: report the hook id, say that a

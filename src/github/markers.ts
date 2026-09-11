@@ -9,8 +9,12 @@ import { isSameProcess, processInfo } from './ps.js';
 
 export interface HookMarker {
   readonly repo: string;
+  // Only a hook this session proved is its own is ever named here: the sweep deletes what
+  // a marker names, and a hook that might belong to another live session must not be in it.
   hookId: number | null;
-  candidates: number[];
+  // Hooks this session created and could not delete. They are kept here so the sweep
+  // retries them: nothing else names them once the forwarder has moved on.
+  pendingHookIds: number[];
   readonly sessionId: string | null;
   janitorPid: number | null;
   janitorStart: string | null;
@@ -33,7 +37,9 @@ function markerName(repo: string, hookId: number | null, pendingId: string): str
 export interface MarkerHandle {
   readonly path: string;
   readonly marker: HookMarker;
-  update(changes: Partial<Pick<HookMarker, 'hookId' | 'candidates' | 'janitorPid' | 'janitorStart' | 'ghPid' | 'ghStart'>>): string;
+  update(
+    changes: Partial<Pick<HookMarker, 'hookId' | 'pendingHookIds' | 'janitorPid' | 'janitorStart' | 'ghPid' | 'ghStart'>>,
+  ): string;
   remove(): void;
 }
 
@@ -48,7 +54,7 @@ export function writeMarker(
   const marker: HookMarker = {
     repo: init.repo,
     hookId: null,
-    candidates: [],
+    pendingHookIds: [],
     sessionId: init.sessionId,
     janitorPid: null,
     janitorStart: null,
@@ -58,6 +64,7 @@ export function writeMarker(
   };
   let path = join(dir, markerName(init.repo, null, pendingId));
   writeFileSync(path, JSON.stringify(marker), { mode: 0o600 });
+  let removed = false;
 
   return {
     get path() {
@@ -65,6 +72,9 @@ export function writeMarker(
     },
     marker,
     update(changes) {
+      // A late update from work still in flight must not resurrect a marker the tear-down
+      // already removed: the file would name hooks nothing is tracking any more.
+      if (removed) return path;
       Object.assign(marker, changes);
       const wanted = join(dir, markerName(marker.repo, marker.hookId, pendingId));
       writeFileSync(path, JSON.stringify(marker), { mode: 0o600 });
@@ -75,6 +85,7 @@ export function writeMarker(
       return path;
     },
     remove() {
+      removed = true;
       rmSync(path, { force: true });
     },
   };
@@ -150,7 +161,8 @@ export async function sweep(gh: GhClient, options: SweepOptions = {}): Promise<S
       continue;
     }
 
-    const ids = [...new Set([...(marker.hookId === null ? [] : [marker.hookId]), ...(marker.candidates ?? [])])];
+    const pending = Array.isArray(marker.pendingHookIds) ? marker.pendingHookIds : [];
+    const ids = new Set([...(marker.hookId === null ? [] : [marker.hookId]), ...pending]);
     let allGone = true;
     for (const hookId of ids) {
       try {

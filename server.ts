@@ -7,7 +7,11 @@ import { Tracking, ToolError, type JanitorHandle, type TrackInput } from './src/
 import { createGhClient } from './src/github/gh.js';
 import { spawnGhForwarder } from './src/github/forwarder.js';
 import { processStart } from './src/github/ps.js';
-import { stderrLogger } from './src/log.js';
+import { guardStdio, stderrLogger } from './src/log.js';
+
+// Before anything else can log: a write to Claude Code's closed pipe would otherwise kill
+// this process on its first line, and the webhook would outlive the session.
+guardStdio();
 
 const config = loadConfig(process.env);
 const sessionId = process.env['CLAUDE_CODE_SESSION_ID'] ?? null;

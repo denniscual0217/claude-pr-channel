@@ -83,9 +83,24 @@ interface ActiveTracking {
   readonly ciEvents: CiEvents;
   readonly commentAuthors: ReadonlySet<string> | null;
   readonly startedAtIso: string;
+  // The repository's cli hooks as they were immediately before gh was last launched.
+  // Mutable: gh creates a new hook on every launch, so what counts as new is re-measured
+  // before each one.
+  readonly snapshot: { ids: Set<number> };
+  // Hooks this session created whose DELETE failed. Forgetting one orphans it: no marker,
+  // no janitor and no sweep would ever name it again.
+  readonly pendingDeletes: Set<number>;
+  // Set only by proof: a ping signed with this session's secret, or a single new hook when
+  // nothing else appeared. Never a hook that might be another session's.
   hookId: number | null;
-  candidates: number[];
   secret: WebhookSecret | null;
+}
+
+interface TeardownOutcome {
+  readonly hookDeleted: boolean;
+  readonly deleted: readonly number[];
+  // New hooks this session could not prove are its own, so it left them alone.
+  readonly leftBehind: readonly number[];
 }
 
 export interface EndedInfo {
@@ -202,6 +217,7 @@ export class Tracking {
     // Refreshed before every launch: gh creates a new hook each time, so what counts as
     // "new" is measured against the hooks in place immediately before it starts.
     const snapshot = { ids: new Set((await this.#listHooks(prRef.repo)).map((hook) => hook.id)) };
+    janitor.send({ snapshot: [...snapshot.ids] });
 
     const forwarder = createForwarder({
       repo: prRef.repo,
@@ -218,33 +234,40 @@ export class Tracking {
       onBeforeRespawn: async () => {
         // gh creates a new hook every launch and leaves the old one active.
         const active = this.#active;
-        if (active?.hookId != null) {
-          await this.#deleteHookQuietly(active.prRef.repo, active.hookId);
-          active.hookId = null;
-          active.marker.update({ hookId: null });
-          active.janitor.send({ hookId: null });
+        if (active === null) return;
+        for (const hookId of [...active.pendingDeletes]) await this.#deleteOrRemember(active, hookId);
+        if (active.hookId !== null) {
+          // A confirmed id leaves nothing to guess at: this session runs one gh at a time,
+          // so once its own hook is deleted every other hook on the repository is someone
+          // else's — including one another session created while we were tracking.
+          await this.#deleteOrRemember(active, active.hookId);
+        } else {
+          // A launch that created a hook and then failed before connecting left it behind;
+          // this is the last moment it can still be told apart from the next one.
+          for (const hookId of (await this.#strayHooks(active)).ours) {
+            await this.#deleteOrRemember(active, hookId);
+          }
         }
         this.#pingedHookIds.clear();
-        snapshot.ids = new Set((await this.#listHooks(prRef.repo)).map((hook) => hook.id));
+        active.snapshot.ids = new Set((await this.#listHooks(active.prRef.repo)).map((hook) => hook.id));
+        // Cleared id and fresh snapshot travel together: a janitor holding one without the
+        // other would read another session's hook as the stray this launch left behind.
+        active.hookId = null;
+        active.marker.update({ hookId: null, pendingHookIds: [...active.pendingDeletes] });
+        active.janitor.send({
+          hookId: null,
+          snapshot: [...active.snapshot.ids],
+          pendingDeletes: [...active.pendingDeletes],
+        });
       },
       onConnected: async () => {
         const active = this.#active;
         if (active === null) return;
-        const rediscovered = await this.#discoverHookId(active.prRef.repo, snapshot.ids);
+        const rediscovered = await this.#discoverHookId(active.prRef.repo);
         active.hookId = rediscovered.hookId;
-        active.candidates = [...rediscovered.candidates];
-        active.marker.update({
-          hookId: rediscovered.hookId,
-          candidates: [...rediscovered.candidates],
-          ghPid: forwarder.pid,
-          ghStart: forwarder.processStart,
-        });
-        active.janitor.send({
-          hookId: rediscovered.hookId,
-          candidates: [...rediscovered.candidates],
-          ghPid: forwarder.pid,
-          ghStart: forwarder.processStart,
-        });
+        const update = { hookId: rediscovered.hookId, ghPid: forwarder.pid, ghStart: forwarder.processStart };
+        active.marker.update(update);
+        active.janitor.send(update);
       },
     });
 
@@ -279,8 +302,9 @@ export class Tracking {
       ciEvents,
       commentAuthors,
       startedAtIso: this.#now().toISOString(),
+      snapshot,
+      pendingDeletes: new Set<number>(),
       hookId: null,
-      candidates: [],
       secret,
     };
     this.#active = active;
@@ -298,24 +322,23 @@ export class Tracking {
     marker.update({ ghPid: forwarder.pid, ghStart: forwarder.processStart });
     janitor.send({ ghPid: forwarder.pid, ghStart: forwarder.processStart });
 
-    const discovered = await this.#discoverHookId(prRef.repo, snapshot.ids);
-    active.candidates = [...discovered.candidates];
-    marker.update({ candidates: [...discovered.candidates] });
-    janitor.send({ candidates: [...discovered.candidates] });
+    const discovered = await this.#discoverHookId(prRef.repo);
 
+    // Delivery does not depend on knowing which hook is ours — the forwarder is connected
+    // and events are already flowing. Only cleanup does. So an unconfirmed id is reported,
+    // not fatal: refusing to track here would throw away a working channel over a webhook
+    // we merely cannot name, and the alternative to naming it is guessing.
     if (discovered.hookId === null) {
-      await this.#teardown(active, { deleteHooks: true });
-      const listed = discovered.candidates.length === 0 ? 'none were seen' : discovered.candidates.join(', ');
-      throw new ToolError(
-        'hook_unresolved',
-        `gh connected but no webhook id could be confirmed. Candidate ids: ${listed}. ` +
-          `Delete any stray hook with: gh api -X DELETE repos/${prRef.repo}/hooks/<id>`,
-      );
+      this.#log('warn', 'hook_unconfirmed', {
+        pr: prKey(prRef),
+        candidates: discovered.candidates,
+        detail: 'no signed ping identified this session\'s webhook; it will be left in place on teardown',
+      });
     }
 
     active.hookId = discovered.hookId;
-    marker.update({ hookId: discovered.hookId, candidates: [] });
-    janitor.send({ hookId: discovered.hookId, candidates: [] });
+    marker.update({ hookId: discovered.hookId });
+    janitor.send({ hookId: discovered.hookId });
     this.#state = 'tracking';
     this.#ended = null;
     this.#log('info', 'tracking_started', {
@@ -342,13 +365,26 @@ export class Tracking {
     const outcome = await this.#teardown(active, { deleteHooks: true });
     this.#state = 'idle';
 
+    const deleted =
+      outcome.deleted.length > 0
+        ? `Deleted webhook ${outcome.deleted.join(', ')}.`
+        : 'There was no webhook of this session left to delete.';
     const lines = [
       outcome.hookDeleted
-        ? `Stopped tracking ${prKey(active.prRef)}. Deleted webhook ${hookId ?? 'unknown'}. Forwarder stopped.`
+        ? `Stopped tracking ${prKey(active.prRef)}. ${deleted} Forwarder stopped.`
         : `Stopped tracking ${prKey(active.prRef)}. Forwarder and listener stopped, but webhook ${hookId ?? 'unknown'} could NOT be deleted; ` +
           'its marker is kept and the janitor is still retrying. The next track in this session sweeps it.',
       countersLine(counters),
     ];
+    if (outcome.leftBehind.length > 0) {
+      lines.splice(
+        1,
+        0,
+        `Left in place: hook(s) ${outcome.leftBehind.join(', ')} appeared on ${active.prRef.repo} while this session was starting ` +
+          'but could not be proved to be its own, so they may belong to another session. ' +
+          `Check them with: gh api repos/${active.prRef.repo}/hooks`,
+      );
+    }
     if (!outcome.hookDeleted) {
       throw new ToolError('hook_delete_failed', lines.join('\n'));
     }
@@ -414,16 +450,33 @@ export class Tracking {
 
   // Order is the contract: the listener stops first so nothing is half-processed, gh
   // next so it cannot recreate anything, and only then is the hook deleted.
-  async #teardown(active: ActiveTracking, options: { deleteHooks: boolean }): Promise<{ hookDeleted: boolean }> {
+  async #teardown(active: ActiveTracking, options: { deleteHooks: boolean }): Promise<TeardownOutcome> {
     if (this.#active === active) this.#active = null;
     await active.listener.stop();
     await active.forwarder.stop();
 
     let hookDeleted = true;
+    let leftBehind: readonly number[] = [];
+    const deleted: number[] = [];
     if (options.deleteHooks) {
-      for (const hookId of [...new Set([...(active.hookId === null ? [] : [active.hookId]), ...active.candidates])]) {
-        const gone = await this.#deleteHookQuietly(active.prRef.repo, hookId);
-        if (!gone) hookDeleted = false;
+      // With a confirmed id there is nothing to guess: this session runs one gh at a time,
+      // so every other hook on the repo belongs to someone else. Without one, gh may still
+      // have created a hook nothing ever confirmed — it is only safely ours when it is the
+      // only one that appeared since the snapshot.
+      const stray = active.hookId === null ? await this.#strayHooks(active) : { ours: [], ambiguous: [] };
+      leftBehind = stray.ambiguous;
+      const ids = new Set([
+        ...(active.hookId === null ? [] : [active.hookId]),
+        ...stray.ours,
+        ...active.pendingDeletes,
+      ]);
+      for (const hookId of ids) {
+        const gone = await this.#deleteOrRemember(active, hookId);
+        if (gone) deleted.push(hookId);
+        else hookDeleted = false;
+      }
+      if (leftBehind.length > 0) {
+        this.#log('warn', 'hooks_left_behind', { repo: active.prRef.repo, ids: [...leftBehind] });
       }
     }
 
@@ -431,12 +484,49 @@ export class Tracking {
       active.marker.remove();
       // The janitor has nothing left to do, and says so before its pipe closes.
       active.janitor.send({ done: true });
+    } else {
+      // Whatever could not be deleted stays named, so the janitor and the next sweep both
+      // still know what to retry.
+      active.marker.update({ pendingHookIds: [...active.pendingDeletes] });
+      active.janitor.send({ pendingDeletes: [...active.pendingDeletes] });
     }
     active.janitor.closeStdin();
     active.secret = null;
     active.requiredChecks.forget();
     this.#log('info', 'tracking_stopped', { pr: prKey(active.prRef), hook_deleted: hookDeleted });
-    return { hookDeleted };
+    return { hookDeleted, deleted, leftBehind };
+  }
+
+  // Hooks that appeared since gh was last launched and that no signed ping claimed. gh
+  // creates one on every launch and never deletes it, so an unconfirmed hook can still be
+  // ours — but only when it is the only new one. Two or more and another session on this
+  // repo may own one of them, and deleting that one stops its events without a trace, so
+  // none is touched and the ids are reported instead.
+  // Kept only so a tear-down can report what it is leaving behind. It never claims
+  // ownership: without a signed ping there is no evidence a hook is ours, and on a repo
+  // where another session is tracking a different PR the unfamiliar hook is usually theirs.
+  async #strayHooks(active: ActiveTracking): Promise<{ ours: number[]; ambiguous: number[] }> {
+    let listed: readonly { id: number }[];
+    try {
+      listed = await this.#listHooks(active.prRef.repo);
+    } catch {
+      return { ours: [], ambiguous: [] };
+    }
+    // The snapshot is fine to report from — it was only ever dangerous to delete from.
+    // Naming a hook that predates this session would be a false accusation, not a leak.
+    const unproven = listed
+      .map((hook) => hook.id)
+      .filter((id) => !this.#pingedHookIds.has(id) && !active.snapshot.ids.has(id));
+    return { ours: [], ambiguous: unproven };
+  }
+
+  // A DELETE that failed is remembered rather than forgotten: the tear-down, the janitor
+  // and the next sweep all retry what is left in pendingDeletes.
+  async #deleteOrRemember(active: ActiveTracking, hookId: number): Promise<boolean> {
+    const gone = await this.#deleteHookQuietly(active.prRef.repo, hookId);
+    if (gone) active.pendingDeletes.delete(hookId);
+    else active.pendingDeletes.add(hookId);
+    return gone;
   }
 
   async #deleteHookQuietly(repo: string, hookId: number): Promise<boolean> {
@@ -449,48 +539,51 @@ export class Tracking {
     }
   }
 
-  async #discoverHookId(
-    repo: string,
-    snapshot: ReadonlySet<number>,
-  ): Promise<{ hookId: number | null; candidates: readonly number[] }> {
+  // Ownership is proved, never guessed. Our webhook secret is unique to this session, so
+  // a ping that reaches our listener with a valid signature can only be for our hook.
+  // Anything else — a hook that appeared while we were starting, the only unfamiliar id
+  // on the repo — is a guess, and every guess here risks deleting the hook another live
+  // session is using for a different PR in the same repo.
+  //
+  // If GitHub's creation ping is missed (the relay is not always attached in time), we
+  // ask GitHub to ping each of the repo's forwarding hooks: only ours comes back signed
+  // with our secret. If none does, we own nothing and delete nothing — leaking a hook is
+  // recoverable, deleting someone else's is not.
+  async #discoverHookId(repo: string): Promise<{ hookId: number | null; candidates: readonly number[] }> {
     const deadline = this.#now().getTime() + (this.#deps.hookDiscoveryMs ?? 20_000);
     const pollMs = this.#deps.hookPollMs ?? 1_000;
-    const candidates = new Set<number>();
-    const pinged = new Set<number>();
+    const seen = new Set<number>();
+    const probed = new Set<number>();
 
     for (;;) {
-      for (const hookId of this.#pingedHookIds) {
-        if (!snapshot.has(hookId)) return { hookId, candidates: [...candidates] };
-      }
+      const confirmed = [...this.#pingedHookIds][0];
+      if (confirmed !== undefined) return { hookId: confirmed, candidates: [...seen] };
+
       let listed: readonly { id: number }[] = [];
       try {
         listed = await this.#listHooks(repo);
       } catch {
         listed = [];
       }
-      for (const hook of listed) {
-        if (!snapshot.has(hook.id)) candidates.add(hook.id);
-      }
-      for (const hookId of candidates) {
-        if (pinged.has(hookId)) continue;
-        pinged.add(hookId);
+      for (const hook of listed) seen.add(hook.id);
+
+      for (const hookId of seen) {
+        if (probed.has(hookId)) continue;
+        probed.add(hookId);
         try {
           await this.#deps.gh.pingHook(repo, hookId);
         } catch {
-          // A ping we cannot send just means this candidate stays unconfirmed.
+          // A ping we cannot send just means this candidate stays unproven.
         }
       }
-      for (const hookId of this.#pingedHookIds) {
-        if (!snapshot.has(hookId)) return { hookId, candidates: [...candidates] };
-      }
+
+      const afterProbe = [...this.#pingedHookIds][0];
+      if (afterProbe !== undefined) return { hookId: afterProbe, candidates: [...seen] };
       if (this.#now().getTime() >= deadline) break;
       await this.#wait(pollMs);
     }
 
-    // Exactly one new hook and no signed ping is still unambiguous: nothing else appeared
-    // on this repo in the window.
-    const list = [...candidates];
-    return { hookId: list.length === 1 ? (list[0] as number) : null, candidates: list };
+    return { hookId: null, candidates: [...seen] };
   }
 
   async #listHooks(repo: string): Promise<readonly { id: number }[]> {
@@ -561,7 +654,7 @@ export class Tracking {
       `Tracking ${prKey(active.prRef)} — ${active.pr.url}`,
       `head: ${active.head.headSha ?? 'unknown'} (source: ${active.head.headSource ?? 'none'})`,
       `state: ${active.pr.isDraft ? 'draft' : 'open'} (${active.pr.headRefName} into ${active.pr.baseRefName})`,
-      `hook: ${active.hookId}`,
+      `hook: ${active.hookId ?? 'unconfirmed'}`,
       `listener: 127.0.0.1:${active.listener.port}`,
       `filters: ci_events=${active.ciEvents}, required_checks=[${requiredChecks.join(', ')}], comment_authors=${
         active.commentAuthors === null ? 'anyone' : [...active.commentAuthors].join(', ')

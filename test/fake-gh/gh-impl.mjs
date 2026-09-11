@@ -1,6 +1,7 @@
 // Test-only stand-in for the gh CLI. It answers from a JSON state file and records every
 // call, so no test can reach GitHub. Without FAKE_GH_STATE it refuses to run at all:
 // a test that forgot to configure it must fail loudly, never fall through to real gh.
+import { createHmac, randomUUID } from 'node:crypto';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 
 const statePath = process.env.FAKE_GH_STATE;
@@ -37,6 +38,37 @@ function fail(message, code = 1) {
 
 const state = readState();
 const joined = args.join(' ');
+
+// gh webhook forward: creates a brand-new hook on the repository before it connects,
+// leaves it there when it dies, and pings it through the caller's own listener. That
+// ordering is the whole reason the channel has to reason about hooks it never confirmed.
+if (args[0] === 'webhook' && args[1] === 'forward') {
+  const flag = (name) => {
+    const found = args.find((arg) => arg.startsWith(`--${name}=`));
+    return found === undefined ? '' : found.slice(name.length + 3);
+  };
+  const repo = flag('repo');
+  const id = Number(state.nextHookId ?? 100);
+  state.nextHookId = id + 1;
+  state.hooks = [...(state.hooks ?? []), { id, name: 'cli', active: true, created_at: new Date().toISOString() }];
+  writeState(state);
+  if (state.forwardConnects === false) await new Promise(() => {});
+  process.stderr.write('Forwarding Webhook events from GitHub...\n');
+  if (state.forwardPings !== false) {
+    const body = JSON.stringify({ zen: 'Design for failure.', hook_id: id, repository: { full_name: repo } });
+    await fetch(flag('url'), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-GitHub-Event': 'ping',
+        'X-GitHub-Delivery': randomUUID(),
+        'X-Hub-Signature-256': `sha256=${createHmac('sha256', flag('secret')).update(body).digest('hex')}`,
+      },
+      body,
+    }).catch(() => {});
+  }
+  await new Promise(() => {});
+}
 
 if (args[0] === 'auth' && args[1] === 'status') {
   if (state.unauthenticated) fail('gh: You are not logged into any GitHub hosts', 1);

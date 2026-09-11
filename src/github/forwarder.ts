@@ -83,8 +83,18 @@ export function createForwarder(options: ForwarderOptions): Forwarder {
   let currentStart: string | null = null;
   let nextRetryInMs: number | null = null;
   let stopped = false;
+  // A restart iteration in flight when stop() is called owns hooks the teardown is about
+  // to reason about, so stop() waits for it rather than racing it.
+  let restarting: Promise<void> | null = null;
+  let releaseStopped: () => void = () => {};
+  const stoppedSignal = new Promise<void>((resolve) => {
+    releaseStopped = resolve;
+  });
 
   async function launch(): Promise<void> {
+    // Nothing may reach spawn() after stop(): a gh started then creates a hook that no
+    // marker, janitor or sweep will ever name.
+    if (stopped) throw new ForwarderError('gh webhook forward was stopped before it could be launched', '');
     const handle = options.spawn(args, { [SECRET_ENV]: options.secret });
     child = handle;
     currentStart = processStart(handle.pid);
@@ -126,7 +136,13 @@ export function createForwarder(options: ForwarderOptions): Forwarder {
     void handle.exited.then(async (code) => {
       if (stopped || child !== handle) return;
       log('warn', 'forwarder_exited', { pid: handle.pid, code, restarts });
-      await restartLoop();
+      const cycle = restartLoop();
+      restarting = cycle;
+      try {
+        await cycle;
+      } finally {
+        if (restarting === cycle) restarting = null;
+      }
     });
   }
 
@@ -136,13 +152,18 @@ export function createForwarder(options: ForwarderOptions): Forwarder {
       state = 'restarting';
       restarts += 1;
       nextRetryInMs = delay;
-      await wait(delay);
+      // The backoff is abandoned the moment stop() lands, so a tear-down never waits out
+      // a minute of it.
+      await Promise.race([wait(delay), stoppedSignal]);
       if (stopped) return;
       try {
         await options.onBeforeRespawn?.();
       } catch {
         // A hook we could not delete is swept later; it must not stop the restart.
       }
+      // onBeforeRespawn is several GitHub round trips long; an untrack, a merge or a
+      // session ending inside it has already torn everything down.
+      if (stopped) return;
       try {
         await launch();
         const handle = child;
@@ -184,18 +205,21 @@ export function createForwarder(options: ForwarderOptions): Forwarder {
     },
     async stop() {
       stopped = true;
+      releaseStopped();
       const handle = child;
       child = null;
-      if (handle === null) {
-        state = 'dead';
-        return;
+      if (handle !== null) {
+        handle.kill('SIGTERM');
+        const killed = await Promise.race([
+          handle.exited.then(() => true),
+          wait(2_000).then(() => false),
+        ]);
+        if (!killed) handle.kill('SIGKILL');
       }
-      handle.kill('SIGTERM');
-      const killed = await Promise.race([
-        handle.exited.then(() => true),
-        wait(2_000).then(() => false),
-      ]);
-      if (!killed) handle.kill('SIGKILL');
+      // Returning while a restart is still mid-flight would let it spawn a gh, and a
+      // hook, behind the tear-down that is deleting them.
+      const cycle = restarting;
+      if (cycle !== null) await cycle;
       state = 'dead';
     },
   };

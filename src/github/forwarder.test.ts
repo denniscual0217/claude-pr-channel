@@ -196,6 +196,81 @@ describe('the forwarder', () => {
     (resolveWait as unknown as () => void)?.();
   });
 
+  // The hook clean-up between two launches takes several GitHub round trips, and an
+  // untrack, a merged PR or a session ending lands inside it routinely. A gh spawned after
+  // that creates a hook nothing left alive would ever delete.
+  it('never spawns a replacement when stop lands inside onBeforeRespawn', async () => {
+    let releaseRespawn: (() => void) | null = null;
+    let inRespawn = false;
+    const fake = fakeSpawn((child) => setTimeout(() => child.emit(`${CONNECT_LINE}\n`), 5));
+    const { forwarder } = build(fake, {
+      onBeforeRespawn: () =>
+        new Promise<void>((resolve) => {
+          inRespawn = true;
+          releaseRespawn = resolve;
+        }),
+    });
+
+    await forwarder.start();
+    fake.latest().exit(1);
+    await until(() => inRespawn);
+
+    const stopping = forwarder.stop();
+    (releaseRespawn as unknown as () => void)();
+    await stopping;
+
+    expect(fake.children).toHaveLength(1);
+    expect(forwarder.state).toBe('dead');
+  });
+
+  // stop() returning while the restart is still mid-flight is what lets a tear-down delete
+  // hooks the respawn is about to recreate.
+  it('waits for a restart already under way before it returns', async () => {
+    let releaseRespawn: (() => void) | null = null;
+    let inRespawn = false;
+    let respawnFinished = false;
+    const fake = fakeSpawn((child) => setTimeout(() => child.emit(`${CONNECT_LINE}\n`), 5));
+    const { forwarder } = build(fake, {
+      onBeforeRespawn: () =>
+        new Promise<void>((resolve) => {
+          inRespawn = true;
+          releaseRespawn = () => {
+            respawnFinished = true;
+            resolve();
+          };
+        }),
+    });
+
+    await forwarder.start();
+    fake.latest().exit(1);
+    await until(() => inRespawn);
+
+    const stopping = forwarder.stop();
+    let returned = false;
+    void stopping.then(() => (returned = true));
+    await Bun.sleep(20);
+    expect(returned).toBe(false);
+
+    (releaseRespawn as unknown as () => void)();
+    await stopping;
+    expect(respawnFinished).toBe(true);
+  });
+
+  // A 60s backoff must not become a 60s untrack.
+  it('abandons the backoff the moment it is stopped', async () => {
+    const fake = fakeSpawn((child) => setTimeout(() => child.emit(`${CONNECT_LINE}\n`), 5));
+    const { forwarder } = build(fake, { wait: () => new Promise<void>(() => {}) });
+
+    await forwarder.start();
+    fake.latest().exit(1);
+    await until(() => forwarder.state === 'restarting');
+
+    await forwarder.stop();
+
+    expect(fake.children).toHaveLength(1);
+    expect(forwarder.state).toBe('dead');
+  });
+
   it('stops by asking gh to go, and stops supervising once it has', async () => {
     const fake = fakeSpawn((child) => setTimeout(() => child.emit(`${CONNECT_LINE}\n`), 5));
     const { forwarder } = build(fake);

@@ -63,7 +63,15 @@ describe('the plugin manifest', () => {
   it('names the plugin and the MCP server the same, so the channel source matches', () => {
     expect(plugin.name).toBe('pr-channel');
     expect(Object.keys(mcp.mcpServers)).toEqual(['pr-channel']);
-    expect(mcp.mcpServers['pr-channel']?.command).toBe('bun');
-    expect(mcp.mcpServers['pr-channel']?.args).toContain('${CLAUDE_PLUGIN_ROOT}');
+    expect(mcp.mcpServers['pr-channel']?.args.join(' ')).toContain('${CLAUDE_PLUGIN_ROOT}');
+  });
+
+  // `bun run start` would leave the channel a grandchild of Claude Code, which never sees
+  // its SIGTERM and is orphaned to init; exec makes the channel the process Claude Code
+  // signals, so its own shutdown deletes the webhook.
+  it('execs the channel so it is the process Claude Code signals', () => {
+    const launch = mcp.mcpServers['pr-channel']?.args.join(' ') ?? '';
+    expect(launch).toContain('exec bun server.ts');
+    expect(launch).not.toMatch(/bun run\b/);
   });
 });

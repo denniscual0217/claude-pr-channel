@@ -158,6 +158,30 @@ describe('sweep', () => {
     expect(readMarkers(cacheDir)).toHaveLength(1);
   });
 
+  // A DELETE that failed during a forwarder restart leaves a hook nothing else names.
+  it('deletes the hooks a marker still has pending as well as the one it names', async () => {
+    const handle = writeMarker({ repo: REPO, sessionId: 's1', cacheDir });
+    handle.update({ hookId: 12, pendingHookIds: [11], janitorPid: 2_147_483_646, janitorStart: null });
+
+    const result = await sweep(gh(), { onlyRepo: REPO, cacheDir });
+
+    expect([...result.deletedHooks].sort()).toEqual([11, 12]);
+    expect((fake.state()['hooks'] as { id: number }[]).map((hook) => hook.id)).toEqual([13]);
+    expect(readMarkers(cacheDir)).toEqual([]);
+  });
+
+  // A restart that is still in flight when the tear-down finishes must not write the file
+  // back: it would name hooks nothing is tracking any more.
+  it('ignores an update that arrives after the marker was removed', () => {
+    const handle = writeMarker({ repo: REPO, sessionId: 's1', cacheDir });
+    handle.update({ hookId: 11 });
+    handle.remove();
+
+    handle.update({ hookId: null, pendingHookIds: [11] });
+
+    expect(readMarkers(cacheDir)).toEqual([]);
+  });
+
   it('leaves markers for other repositories alone', async () => {
     writeMarker({ repo: 'toptal/other', sessionId: 's1', cacheDir }).update({ hookId: 12, janitorPid: 2_147_483_646 });
 
