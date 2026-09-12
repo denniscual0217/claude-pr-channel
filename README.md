@@ -70,15 +70,51 @@ Only what a session can act on. Everything else is counted and dropped.
 | Anything for another PR in the repo | No — counted as `dropped_other_pr` |
 | A green for a head the PR has already left | Delivered as history, flagged stale, never as a green light |
 
-## Safety
+## Security
 
-- The listener binds `127.0.0.1:0`. Nothing off this machine can reach it.
-- Every delivery is HMAC-verified against a secret generated per `track`, over the raw
-  bytes, before anything parses the body. The secret is never written to a file, a log or
-  a marker; `gh webhook forward` takes it on its own argv, which is visible in `ps` to
-  local users and cannot be avoided without replacing gh-webhook.
+Read this before pointing it at a repository you care about.
+
+### The model acts on text other people can write
+
+This is the risk that matters. A PR comment is untrusted input, and it reaches a Claude
+Code session that can edit files, run commands and push. The event carries that text
+fenced and labelled untrusted, and the session is told to weigh it as a request rather
+than obey it — but that is a mitigation, not a boundary. Prompt injection is not a solved
+problem, and anyone who can comment on the PR is speaking to your agent.
+
+Three things keep the blast radius small, and you should keep all three:
+
+- **`PR_CHANNEL_COMMENT_AUTHORS` defaults to you alone** — the account `gh` is
+  authenticated as. Widen it deliberately, one login at a time, and understand that
+  everyone you add can ask your session to change code.
+- **Automated reviewers are allowed by default** because their findings are useful. A bot
+  that is compromised, or simply confused, gets the same audience as a person.
+  `PR_CHANNEL_BOT_COMMENTS=ignore` turns them off.
+- **The session's permission mode is the real limit.** The plugin does not sandbox
+  anything: an event runs with whatever the session was launched with. Never run a
+  PR-bound session with `--dangerously-skip-permissions`.
+
+### What the plugin can do to your repository
+
+It creates and deletes webhooks, so it needs admin. It never touches branch protection,
+collaborators or settings, and it only deletes a webhook it has proved is its own — but
+admin is admin, and the token it uses is your `gh` login.
+
+### The webhook secret
+
+Generated per `track`, held in memory, never written to a file, a log or a marker.
+`gh webhook forward` takes it on its own argv, where any local user can read it with `ps`.
+That cannot be avoided without replacing gh-webhook, and it means **this is not safe on a
+machine you share with people you would not trust with that repository**.
+
+### What is verified
+
+- The listener binds `127.0.0.1:0`. Nothing off the machine can reach it.
+- Every delivery is HMAC-SHA256 verified over the raw bytes, before the body is parsed.
 - A delivery for any repository but the tracked one is refused with 403.
-- Comment and review text reaches the model fenced and labelled untrusted.
+- A repeated `X-GitHub-Delivery` is dropped, so redelivery is harmless.
+- An event for a superseded head is flagged stale and can never read as the current head
+  being green.
 
 ## Cleanup
 
