@@ -3,9 +3,9 @@ import type { PrEvent, PrRef } from '../types.js';
 import { normalizeWebhook } from './normalize.js';
 import { RequiredChecksTracker } from './required-checks.js';
 
-const repository = { full_name: 'Toptal/Example' };
+const repository = { full_name: 'Acme-Labs/Example' };
 const sender = { login: 'octocat' };
-const pr: PrRef = { repo: 'toptal/example', prNumber: 42 };
+const pr: PrRef = { repo: 'acme-labs/example', prNumber: 42 };
 const head = 'a'.repeat(40);
 const olderHead = 'b'.repeat(40);
 

@@ -45,6 +45,8 @@ describe('the track skill', () => {
     expect(track).toContain('**track** tool');
     expect(track).toContain('**status** tool');
     expect(track).toContain('already_tracking');
+    // Every failure code track can return has to be branchable from the skill.
+    expect(track).toContain('invalid_argument');
     expect(track).toContain('replace: true');
     expect(track).not.toMatch(/pr-channel (up|register|deregister|status)\b/);
   });

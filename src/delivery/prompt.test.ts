@@ -208,26 +208,56 @@ describe('renderEventPrompt', () => {
     expect(prompt).toContain('/comments/12/replies');
   });
 
-  it('treats a built Temploy image as a go-ahead, not a notification', () => {
+  it('treats a successful deploy workflow as a go-ahead, not a notification', () => {
     const prompt = renderEventPrompt(
-      envelope('temploy_workflow', {
-        workflowRunId: 9, runAttempt: 1, state: { status: 'completed', conclusion: 'success' },
+      envelope('deploy_workflow', {
+        workflowName: 'Ship It', workflowRunId: 9, runAttempt: 1,
+        state: { status: 'completed', conclusion: 'success' },
       }),
     );
 
-    expect(prompt).toContain('built and available');
+    expect(prompt).toContain('Workflow "Ship It"');
+    expect(prompt).toContain('so what it produces is ready');
     expect(prompt).toContain('this is the signal to do it now');
   });
 
-  it('tells the session to leave a failed Temploy build alone', () => {
+  it('tells the session to leave a failed deploy workflow alone, by name', () => {
     const prompt = renderEventPrompt(
-      envelope('temploy_workflow', {
-        workflowRunId: 9, runAttempt: 1, state: { status: 'completed', conclusion: 'failure' },
+      envelope('deploy_workflow', {
+        workflowName: 'Ship It', workflowRunId: 9, runAttempt: 1,
+        state: { status: 'completed', conclusion: 'failure' },
       }),
     );
 
     expect(prompt).toContain('Do not chase this');
+    expect(prompt).toContain('A failed "Ship It" run is not this session\'s');
     expect(prompt).not.toContain('--log-failed');
+  });
+
+  it('does not call a deploy workflow that is still running a failure', () => {
+    const prompt = renderEventPrompt(
+      envelope('deploy_workflow', {
+        workflowName: 'Ship It', workflowRunId: 9, runAttempt: 1,
+        state: { status: 'in_progress' },
+      }),
+    );
+
+    expect(prompt).toContain('is in_progress');
+    expect(prompt).toContain('has not finished');
+    expect(prompt).not.toContain('A failed');
+  });
+
+  it('fences the subject of a lifecycle action that names one', () => {
+    const prompt = renderEventPrompt(
+      envelope('pr_lifecycle', {
+        action: 'labeled', draft: false, baseRef: 'main', headRef: 'feature/widget-cache',
+        untrustedTitle: untrusted('Cache the widget'), untrustedSubject: untrusted('needs-design'),
+      }),
+    );
+
+    expect(prompt).toContain('subject of the labeled action');
+    expect(prompt).toContain('needs-design');
+    expect(prompt).toContain('No reply is expected for a lifecycle change');
   });
 
   it('tells the session to fix a failing check, not just report it', () => {

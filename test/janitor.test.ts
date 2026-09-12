@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { fakeGhEnv, type FakeGh } from './fake-gh/harness.js';
 import { processInfo, processStart } from '../src/github/ps.js';
 
-const REPO = 'toptal/example';
+const REPO = 'acme-labs/example';
 const JANITOR = join(import.meta.dir, '..', 'src', 'github', 'janitor.ts');
 
 let dir: string;

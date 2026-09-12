@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test';
-import type { CiAllRequiredGreenEvent, CiCheckEvent, PrEvent, PrLifecycleAction, PrRef, TemployWorkflowEvent } from '../types.js';
+import type { CiAllRequiredGreenEvent, CiCheckEvent, PrEvent, PrLifecycleAction, PrRef, DeployWorkflowEvent } from '../types.js';
 import { isPositiveHeadSignal, untrusted } from '../types.js';
 import { HeadTracker } from './head.js';
 
-const pr: PrRef = { repo: 'toptal/example', prNumber: 42 };
+const pr: PrRef = { repo: 'acme-labs/example', prNumber: 42 };
 const sha1 = '1'.repeat(40);
 const sha2 = '2'.repeat(40);
 const sha3 = '3'.repeat(40);
@@ -35,14 +35,15 @@ function allGreen(headSha: string): CiAllRequiredGreenEvent {
   };
 }
 
-function temployReady(headSha: string): TemployWorkflowEvent {
+function deployReady(headSha: string): DeployWorkflowEvent {
   return {
-    kind: 'temploy_workflow',
+    kind: 'deploy_workflow',
     prRef: pr,
     headSha,
     actorLogin: null,
     occurredAtIso: '2026-09-07T10:00:00.000Z',
     htmlUrl: null,
+    workflowName: 'Build Preview Image',
     workflowRunId: 5,
     runAttempt: 1,
     state: { status: 'completed', conclusion: 'success' },
@@ -67,6 +68,7 @@ function lifecycle(
     baseRef: 'main',
     headRef: 'feature',
     untrustedTitle: untrusted('title'),
+    untrustedSubject: null,
   };
 }
 
@@ -85,7 +87,7 @@ function comment(headSha: string | null): PrEvent {
 }
 
 function tracked(headSha: string | null, atIso = '2026-09-07T09:00:00.000Z'): HeadTracker {
-  const head = new HeadTracker({ repo: 'Toptal/Example', prNumber: 42 }, 'open');
+  const head = new HeadTracker({ repo: 'Acme-Labs/Example', prNumber: 42 }, 'open');
   head.seed(headSha, atIso);
   return head;
 }
@@ -151,11 +153,11 @@ describe('the superseded-head invariant', () => {
 
     head.apply(lifecycle('synchronize', sha2));
 
-    for (const late of [ciGreen(sha1), allGreen(sha1), temployReady(sha1)]) {
+    for (const late of [ciGreen(sha1), allGreen(sha1), deployReady(sha1)]) {
       expect(isPositiveHeadSignal(late)).toBe(true);
       expect(head.classify(late)).toMatchObject({ stale: true, suppressedPositiveSignal: true });
     }
-    for (const current of [ciGreen(sha2), allGreen(sha2), temployReady(sha2)]) {
+    for (const current of [ciGreen(sha2), allGreen(sha2), deployReady(sha2)]) {
       expect(head.classify(current)).toMatchObject({ stale: false, suppressedPositiveSignal: false });
     }
   });
@@ -274,7 +276,7 @@ describe('head monotonicity', () => {
 describe('an unknown head', () => {
   it('suppresses positive signals, because no head can be vouched for', () => {
     const head = tracked(null);
-    for (const positive of [ciGreen(sha1), allGreen(sha1), temployReady(sha1)]) {
+    for (const positive of [ciGreen(sha1), allGreen(sha1), deployReady(sha1)]) {
       expect(head.classify(positive)).toMatchObject({
         stale: false,
         headKnown: false,
@@ -292,11 +294,11 @@ describe('prsByHead', () => {
   it('claims a delivery for any head this PR has held, and nothing else', () => {
     const head = tracked(sha1);
     head.apply(lifecycle('synchronize', sha2));
-    expect(head.prsByHead('Toptal/Example', sha2)).toEqual([pr]);
+    expect(head.prsByHead('Acme-Labs/Example', sha2)).toEqual([pr]);
     // A check can outrun the synchronize for its own head, and a head the PR has left
     // still belongs to it.
-    expect(head.prsByHead('toptal/example', sha1)).toEqual([pr]);
-    expect(head.prsByHead('toptal/example', sha3)).toEqual([]);
-    expect(head.prsByHead('toptal/other', sha1)).toEqual([]);
+    expect(head.prsByHead('acme-labs/example', sha1)).toEqual([pr]);
+    expect(head.prsByHead('acme-labs/example', sha3)).toEqual([]);
+    expect(head.prsByHead('acme-labs/other', sha1)).toEqual([]);
   });
 });

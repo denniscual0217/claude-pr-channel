@@ -10,12 +10,13 @@ import type {
   PrRef,
   ReviewAction,
   ReviewState,
-  TemployWorkflowState,
+  UntrustedGithubText,
+  WorkflowRunState,
 } from '../types.js';
 import {
   CHECK_CONCLUSIONS,
+  PR_LIFECYCLE_ACTIONS,
   REVIEW_STATES,
-  TEMPLOY_WORKFLOW_NAME,
   isClaudeAuthored,
   untrusted,
 } from '../types.js';
@@ -41,6 +42,9 @@ export interface NormalizeOptions {
   readonly commentAuthors?: ReadonlySet<string> | null;
   // Automated reviewers are handled by default; 'ignore' drops them.
   readonly botComments?: BotComments;
+  // The workflow whose run means something is built and deployable. Nothing is matched
+  // until one is configured: there is no default workflow name.
+  readonly deployWorkflowName?: string | null;
 }
 
 export function normalizeWebhook(eventName: string, payload: unknown, options: NormalizeOptions = {}): PrEvent | null {
@@ -208,22 +212,43 @@ function normalizeLifecycle(ctx: Ctx): PrLifecycleEvent | null {
     baseRef: str(obj(pr['base'])?.['ref']) ?? '',
     headRef: str(obj(pr['head'])?.['ref']) ?? '',
     untrustedTitle: untrusted(str(pr['title']) ?? ''),
+    untrustedSubject: subjectOf(ctx.body, action),
   };
 }
 
-function lifecycleAction(raw: string, pr: Json): PrLifecycleAction | null {
-  switch (raw) {
-    case 'opened':
-    case 'synchronize':
-    case 'ready_for_review':
-    case 'converted_to_draft':
-    case 'reopened':
-      return raw;
-    case 'closed':
-      return pr['merged'] === true || str(pr['merged_at']) !== null ? 'merged' : 'closed';
+// A label name, an assignee, a requested reviewer or team, a milestone title: what the
+// action was about. Label names and milestone titles are free text written on GitHub, so
+// the whole subject is fenced rather than interpolated into the prompt.
+function subjectOf(body: Json, action: PrLifecycleAction): UntrustedGithubText | null {
+  const named =
+    str(obj(body['label'])?.['name']) ??
+    str(obj(body['assignee'])?.['login']) ??
+    str(obj(body['requested_reviewer'])?.['login']) ??
+    str(obj(body['requested_team'])?.['name']) ??
+    str(obj(body['milestone'])?.['title']);
+  switch (action) {
+    case 'labeled':
+    case 'unlabeled':
+    case 'assigned':
+    case 'unassigned':
+    case 'review_requested':
+    case 'review_request_removed':
+    case 'milestoned':
+    case 'demilestoned':
+      return named === null ? null : untrusted(named);
     default:
       return null;
   }
+}
+
+const KNOWN_LIFECYCLE_ACTIONS: ReadonlySet<string> = new Set(PR_LIFECYCLE_ACTIONS);
+
+// 'merged' is this plugin's split of GitHub's single closed action, so that a merge and
+// an abandonment can be told apart without reading the payload again downstream.
+function lifecycleAction(raw: string, pr: Json): PrLifecycleAction | null {
+  if (raw === 'merged') return null;
+  if (raw === 'closed') return pr['merged'] === true || str(pr['merged_at']) !== null ? 'merged' : 'closed';
+  return KNOWN_LIFECYCLE_ACTIONS.has(raw) ? (raw as PrLifecycleAction) : null;
 }
 
 function normalizeCheckRun(ctx: Ctx): readonly PrEvent[] {
@@ -282,27 +307,33 @@ function normalizeCheckSuite(ctx: Ctx): readonly PrEvent[] {
   }));
 }
 
+// One workflow, named in the config, matched exactly and case-sensitively. Every other
+// workflow run on the repository — including this one when no name is configured —
+// produces no event at all.
 function normalizeWorkflowRun(ctx: Ctx): readonly PrEvent[] {
+  const configured = ctx.options.deployWorkflowName ?? null;
+  if (configured === null) return [];
   const run = obj(ctx.body['workflow_run']);
   if (!run) return [];
   const name = str(run['name']) ?? str(obj(ctx.body['workflow'])?.['name']);
-  if (name !== TEMPLOY_WORKFLOW_NAME) return [];
+  if (name !== configured) return [];
   const headSha = str(run['head_sha']);
   const workflowRunId = num(run['id']);
   if (!headSha || workflowRunId === null) return [];
-  const state = temployState(str(run['status']) ?? str(ctx.body['action']), str(run['conclusion']));
+  const state = workflowRunState(str(run['status']) ?? str(ctx.body['action']), str(run['conclusion']));
   if (!state) return [];
   const base = {
     headSha,
     actorLogin: loginOf(run['triggering_actor']) ?? loginOf(run['actor']) ?? ctx.actor,
     occurredAtIso: iso(run['updated_at'], run['run_started_at'], run['created_at']) ?? ctx.now(),
     htmlUrl: str(run['html_url']),
+    workflowName: configured,
     workflowRunId,
     runAttempt: num(run['run_attempt']) ?? 1,
     state,
   };
-  return prRefsForSha(ctx, run['pull_requests'], headSha, 'temploy_workflow').map((prRef) => ({
-    kind: 'temploy_workflow',
+  return prRefsForSha(ctx, run['pull_requests'], headSha, 'deploy_workflow').map((prRef) => ({
+    kind: 'deploy_workflow',
     prRef,
     ...base,
   }));
@@ -361,7 +392,7 @@ function checkState(status: string | null, conclusion: string | null): CheckStat
   }
 }
 
-function temployState(status: string | null, conclusion: string | null): TemployWorkflowState | null {
+function workflowRunState(status: string | null, conclusion: string | null): WorkflowRunState | null {
   return status === 'requested' ? { status: 'requested' } : checkState(status, conclusion);
 }
 

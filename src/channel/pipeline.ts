@@ -11,7 +11,7 @@ import type { EventEnvelope, PrEvent, PrRef, TerminalLifecycleAction } from '../
 import { isTerminalLifecycleAction, prKey } from '../types.js';
 import type { DeliveryHeaders } from '../webhook/listener.js';
 import { describeEvent } from './describe.js';
-import type { CiEvents } from './filter.js';
+import type { DeliveryPolicy } from './filter.js';
 import { worthWaking } from './filter.js';
 import { eventMeta, type ChannelNotifier } from './server.js';
 
@@ -31,9 +31,10 @@ export interface PipelineOptions {
   readonly deduper: DeliveryDeduper;
   readonly requiredChecks: RequiredChecksTracker;
   readonly notifier: ChannelNotifier;
-  readonly ciEvents: CiEvents;
+  readonly policy: DeliveryPolicy;
   readonly commentAuthors: ReadonlySet<string> | null;
   readonly botComments: BotComments;
+  readonly deployWorkflowName: string | null;
   readonly logger?: Logger;
   readonly now?: () => Date;
   // Called after the terminal event has been handed to the session, so tracking can stop.
@@ -94,6 +95,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       },
       commentAuthors: options.commentAuthors,
       botComments: options.botComments,
+      deployWorkflowName: options.deployWorkflowName,
     });
 
     for (const event of events) {
@@ -146,7 +148,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
   }
 
   async function push(envelope: EventEnvelope, currentHead: string | null): Promise<void> {
-    if (!worthWaking(envelope, options.ciEvents)) {
+    if (!worthWaking(envelope, options.policy)) {
       counters.suppressed += 1;
       log('debug', 'event_suppressed', { kind: envelope.kind, event_id: envelope.id });
       return;

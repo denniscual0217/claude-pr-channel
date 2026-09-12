@@ -10,7 +10,7 @@ export interface DeliveredEvent {
   readonly currentHeadSha: string | null;
   readonly stale: boolean;
   readonly headConfirmed: boolean;
-  // A green or Temploy-ready event for a head that is no longer current. It is still
+  // A green or deploy-ready event for a head that is no longer current. It is still
   // delivered, as history, but it must never read as a signal about the current head.
   readonly positiveSignalSuppressed: boolean;
   readonly receivedAtIso: string;

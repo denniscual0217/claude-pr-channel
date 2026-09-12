@@ -3,7 +3,7 @@ import type { PrEvent, PrRef } from '../types.js';
 import { untrusted } from '../types.js';
 import { DeliveryDeduper, logicalFingerprint } from './dedupe.js';
 
-const pr: PrRef = { repo: 'toptal/example', prNumber: 42 };
+const pr: PrRef = { repo: 'acme-labs/example', prNumber: 42 };
 
 function comment(overrides: Partial<{ commentId: number; body: string; action: 'created' | 'edited' }> = {}): PrEvent {
   return {
