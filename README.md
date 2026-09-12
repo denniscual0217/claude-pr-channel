@@ -72,6 +72,32 @@ Only what a session can act on. Everything else is counted and dropped.
 | Anything for another PR in the repo | No — counted as `dropped_other_pr` |
 | A green for a head the PR has already left | Delivered as history, flagged stale, never as a green light |
 
+## Editing the configuration
+
+The file is plain JSON and meant to be edited by hand. There is also a local editor:
+
+```
+bun run config
+```
+
+It serves a form on `127.0.0.1` — built from the same JSON Schema the plugin validates
+against, so an option added to the config appears in the form without anyone updating the
+UI. A **Raw JSON** tab edits the file directly, and switching tabs carries your edits
+across rather than dropping them.
+
+Saving validates through the plugin's own loader, so the editor cannot write a file the
+plugin would then refuse at startup; the error names the key, what was wrong and what was
+expected. Writes go through a temporary file and a rename, so an interrupted save leaves
+the previous config intact.
+
+It binds loopback only and has no authentication, deliberately: this file decides who may
+drive an agent that pushes code, so it must never be reachable off the machine — and
+anyone with a shell here can already edit the file directly, so the server grants nothing
+the filesystem does not. Do not port-forward it.
+
+Changes apply when a channel next starts. A session already tracking keeps the settings it
+began with.
+
 ## Security
 
 Read this before pointing it at a repository you care about.

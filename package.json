@@ -5,9 +5,10 @@
   "type": "module",
   "description": "Per-session GitHub PR event channel for Claude Code",
   "scripts": {
-    "start": "bun install --no-summary 1>&2 && bun server.ts",
+    "start": "bun install --frozen-lockfile --no-summary 1>&2 && bun server.ts",
     "test": "bun test",
-    "schema": "bun scripts/write-schema.ts"
+    "schema": "bun scripts/write-schema.ts",
+    "config": "bun ui/server.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

@@ -1,0 +1,233 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR Channel configuration</title>
+<style>
+  :root {
+    --paper: #f6f7f8; --card: #fff; --ink: #16191c; --muted: #5d676e;
+    --line: #dde3e6; --accent: #0e6b74; --bad: #a5342f; --good: #2c6e49;
+    --mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #0e1214; --card: #161b1e; --ink: #e6ecee; --muted: #98a6ac;
+      --line: #273034; --accent: #4ec0c8; --bad: #e0736c; --good: #63b784;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 system-ui, sans-serif; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 28px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -.01em; }
+  .path { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin: 0 0 22px; word-break: break-all; }
+  fieldset { border: 1px solid var(--line); border-radius: 6px; background: var(--card); margin: 0 0 16px; padding: 14px 16px 6px; }
+  legend { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--accent); padding: 0 6px; font-weight: 600; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: start; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .row:last-child { border-bottom: 0; }
+  .key { font-family: var(--mono); font-size: 13px; }
+  .desc { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); margin-top: -4px; }
+  input[type=text], input[type=number], select, textarea {
+    font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px;
+    background: var(--paper); color: var(--ink); min-width: 210px;
+  }
+  textarea { width: 100%; font-family: var(--mono); font-size: 13px; min-height: 300px; }
+  input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); }
+  .bar { position: sticky; bottom: 0; background: var(--paper); border-top: 1px solid var(--line);
+         padding: 12px 0; display: flex; gap: 10px; align-items: center; }
+  button { font: inherit; font-weight: 600; padding: 7px 16px; border-radius: 5px; border: 1px solid var(--accent);
+           background: var(--accent); color: var(--paper); cursor: pointer; }
+  button.ghost { background: none; color: var(--accent); }
+  button:disabled { opacity: .5; cursor: default; }
+  #msg { font-size: 13px; white-space: pre-wrap; font-family: var(--mono); }
+  #msg.bad { color: var(--bad); }
+  #msg.good { color: var(--good); }
+  .tabs { display: flex; gap: 6px; margin: 0 0 16px; }
+  .tabs button { background: none; color: var(--muted); border: 1px solid var(--line); font-weight: 500; }
+  .tabs button[aria-pressed=true] { color: var(--accent); border-color: var(--accent); }
+  [hidden] { display: none !important; }
+</style>
+
+<div class="wrap">
+  <h1>PR Channel configuration</h1>
+  <p class="path" id="path">loading…</p>
+
+  <div class="tabs">
+    <button id="tab-form" aria-pressed="true">Form</button>
+    <button id="tab-raw" aria-pressed="false">Raw JSON</button>
+  </div>
+
+  <div id="form"></div>
+  <div id="raw" hidden><textarea id="text" spellcheck="false"></textarea></div>
+
+  <div class="bar">
+    <button id="save">Save</button>
+    <button id="reload" class="ghost">Reload from disk</button>
+    <span id="msg"></span>
+  </div>
+</div>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  let schema = null, config = {}, mode = 'form';
+
+  const get = (obj, path) => path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+  function set(obj, path, value) {
+    const keys = path.split('.');
+    const last = keys.pop();
+    let node = obj;
+    for (const k of keys) node = node[k] ??= {};
+    if (value === undefined) delete node[last]; else node[last] = value;
+  }
+
+  // The form is built from the schema, so an option added to the config appears here
+  // without touching this file.
+  function field(path, spec, value) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const label = document.createElement('label');
+    label.className = 'key';
+    label.textContent = path.split('.').pop();
+    label.htmlFor = path;
+    row.append(label);
+
+    const types = Array.isArray(spec.type) ? spec.type : [spec.type];
+    let input;
+    if (spec.enum) {
+      input = document.createElement('select');
+      for (const option of spec.enum) {
+        const el = document.createElement('option');
+        el.value = el.textContent = option;
+        input.append(el);
+      }
+      input.value = value ?? spec.default ?? spec.enum[0];
+    } else if (types.includes('boolean')) {
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = value ?? spec.default ?? false;
+    } else if (types.includes('array')) {
+      input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'comma separated';
+      input.value = (value ?? spec.default ?? []).join(', ');
+      input.dataset.kind = 'list';
+    } else if (types.includes('integer') || types.includes('number')) {
+      input = document.createElement('input');
+      input.type = 'number';
+      if (spec.minimum !== undefined) input.min = spec.minimum;
+      if (spec.maximum !== undefined) input.max = spec.maximum;
+      input.value = value ?? spec.default ?? '';
+    } else {
+      input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = types.includes('null') ? 'empty = not set' : '';
+      input.value = value ?? spec.default ?? '';
+    }
+    input.id = path;
+    input.dataset.path = path;
+    input.dataset.types = types.join(',');
+    row.append(input);
+
+    if (spec.description) {
+      const desc = document.createElement('div');
+      desc.className = 'desc';
+      desc.textContent = spec.description;
+      row.append(desc);
+    }
+    return row;
+  }
+
+  function build() {
+    const host = $('form');
+    host.replaceChildren();
+    for (const [group, spec] of Object.entries(schema.properties ?? {})) {
+      if (group === '$schema' || !spec.properties) continue;
+      const box = document.createElement('fieldset');
+      const legend = document.createElement('legend');
+      legend.textContent = group;
+      box.append(legend);
+      walk(spec, group, box);
+      host.append(box);
+    }
+  }
+
+  function walk(spec, prefix, box) {
+    for (const [key, child] of Object.entries(spec.properties ?? {})) {
+      const path = `${prefix}.${key}`;
+      if (child.properties) {
+        const sub = document.createElement('fieldset');
+        const legend = document.createElement('legend');
+        legend.textContent = key;
+        sub.append(legend);
+        walk(child, path, sub);
+        box.append(sub);
+      } else {
+        box.append(field(path, child, get(config, path)));
+      }
+    }
+  }
+
+  function collect() {
+    const next = structuredClone(config);
+    for (const input of $('form').querySelectorAll('[data-path]')) {
+      const { path, types, kind } = input.dataset;
+      const list = types.split(',');
+      let value;
+      if (input.type === 'checkbox') value = input.checked;
+      else if (kind === 'list') value = input.value.split(',').map((s) => s.trim()).filter(Boolean);
+      else if (input.type === 'number') value = input.value === '' ? undefined : Number(input.value);
+      else if (input.value === '' && list.includes('null')) value = null;
+      else value = input.value;
+      set(next, path, value);
+    }
+    return next;
+  }
+
+  async function load() {
+    const [s, c] = await Promise.all([
+      fetch('/api/schema').then((r) => r.json()),
+      fetch('/api/config').then((r) => r.json()),
+    ]);
+    schema = s;
+    $('path').textContent = c.exists ? c.path : `${c.path}  (no file yet — showing defaults)`;
+    try { config = JSON.parse(c.text); } catch { config = {}; }
+    $('text').value = c.text;
+    build();
+    say('', '');
+  }
+
+  function say(text, kind) {
+    const el = $('msg');
+    el.textContent = text;
+    el.className = kind;
+  }
+
+  async function save() {
+    const text = mode === 'raw' ? $('text').value : `${JSON.stringify(collect(), null, 2)}\n`;
+    say('saving…', '');
+    const response = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    const body = await response.json();
+    if (!response.ok) { say(body.error ?? 'save failed', 'bad'); return; }
+    say('Saved. Restart any tracking session to pick it up.', 'good');
+    await load();
+  }
+
+  function show(which) {
+    mode = which;
+    // Moving to raw carries the edits across, so a switch never silently drops them.
+    if (which === 'raw') $('text').value = `${JSON.stringify(collect(), null, 2)}\n`;
+    else { try { config = JSON.parse($('text').value); build(); } catch { /* keep the form as-is */ } }
+    $('form').hidden = which !== 'form';
+    $('raw').hidden = which !== 'raw';
+    $('tab-form').setAttribute('aria-pressed', String(which === 'form'));
+    $('tab-raw').setAttribute('aria-pressed', String(which === 'raw'));
+  }
+
+  $('tab-form').addEventListener('click', () => show('form'));
+  $('tab-raw').addEventListener('click', () => show('raw'));
+  $('save').addEventListener('click', save);
+  $('reload').addEventListener('click', load);
+  load();
+</script>
