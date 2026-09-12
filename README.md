@@ -107,6 +107,20 @@ Generated per `track`, held in memory, never written to a file, a log or a marke
 That cannot be avoided without replacing gh-webhook, and it means **this is not safe on a
 machine you share with people you would not trust with that repository**.
 
+### Dependencies
+
+Two direct runtime dependencies, both at **exact versions** — a caret range is the window
+an attacker publishes into. The session start runs `bun install --frozen-lockfile`, so a
+launch can never resolve something the committed `bun.lock` does not already name; it
+fails loudly instead. Dependabot opens a weekly PR so updates are reviewed rather than
+drifted into.
+
+Worth knowing what that actually covers: the MCP SDK pulls in **94 packages** —
+`express`, `hono`, `jose`, `ajv`, `cross-spawn` and their trees — none of which this
+plugin uses directly. Pinning makes that surface *stable*, not small. Bun does not run
+`postinstall` scripts for untrusted dependencies, and this package declares no
+`trustedDependencies`, so nothing in that tree executes at install time.
+
 ### What is verified
 
 - The listener binds `127.0.0.1:0`. Nothing off the machine can reach it.

@@ -1,0 +1,22 @@
+# Updates arrive as pull requests to review, never as silent resolution: the versions in
+# package.json are exact and the session start installs --frozen-lockfile, so nothing
+# changes until a human merges one of these.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    groups:
+      # One PR for the patch noise, separate PRs for anything that can change behaviour.
+      patch-updates:
+        update-types: [patch]
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    labels: [dependencies]
