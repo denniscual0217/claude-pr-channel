@@ -2,14 +2,15 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { EventEnvelope } from '../types.js';
 
 export const CHANNEL_NAME = 'pr-channel';
-export const CHANNEL_VERSION = '3.0.0';
+export const CHANNEL_VERSION = '4.0.0';
 
 // Claude Code delivers this to the model when the server connects, so it knows what the
 // events are before the first one arrives.
 export const CHANNEL_INSTRUCTIONS = [
   `Events from the ${CHANNEL_NAME} channel arrive as <channel source="${CHANNEL_NAME}" ...> and`,
   'carry GitHub pull-request activity for the PR this session is working on: comments,',
-  'reviews, inline review comments, CI results and lifecycle changes.',
+  'reviews, inline review comments, CI results, lifecycle changes and, when configured,',
+  'the result of a deploy workflow.',
   '',
   'This session tracks one pull request at a time. Use the track tool to start, untrack to',
   'stop, and status to see what is being tracked and whether events are still flowing.',

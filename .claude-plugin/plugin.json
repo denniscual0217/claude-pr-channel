@@ -1,6 +1,11 @@
 {
   "name": "pr-channel",
   "description": "Binds one Claude Code session to one GitHub pull request: owns its own webhook, forwards PR events into the session, and cleans the webhook up when the session ends.",
-  "version": "3.0.0",
-  "keywords": ["github", "pull-request", "channel", "mcp"]
+  "version": "4.0.0",
+  "keywords": [
+    "github",
+    "pull-request",
+    "channel",
+    "mcp"
+  ]
 }

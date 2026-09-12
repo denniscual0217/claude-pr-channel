@@ -17,7 +17,7 @@ beforeEach(() => {
       headRefOid: 'a'.repeat(40),
       state: 'OPEN',
       isDraft: false,
-      url: 'https://github.com/Toptal/Example/pull/42',
+      url: 'https://github.com/Acme-Labs/Example/pull/42',
       headRefName: 'feature',
       baseRefName: 'main',
     },
@@ -53,36 +53,36 @@ describe('GhClient', () => {
   });
 
   it('resolves a PR and normalizes its repo', async () => {
-    expect(await client().prView('Toptal/Example', 42)).toMatchObject({
-      repo: 'toptal/example',
+    expect(await client().prView('Acme-Labs/Example', 42)).toMatchObject({
+      repo: 'acme-labs/example',
       number: 42,
       state: 'OPEN',
     });
-    expect(await client().prForCurrentBranch()).toMatchObject({ repo: 'toptal/example', number: 42 });
+    expect(await client().prForCurrentBranch()).toMatchObject({ repo: 'acme-labs/example', number: 42 });
   });
 
   // gh names every hook it creates "cli"; a hook a person added by hand is not ours.
   it('lists only the hooks gh created', async () => {
-    expect((await client().listCliHooks('toptal/example')).map((hook) => hook.id)).toEqual([11]);
+    expect((await client().listCliHooks('acme-labs/example')).map((hook) => hook.id)).toEqual([11]);
   });
 
   it('treats a 404 delete as already done and reports anything else', async () => {
-    expect(await client().deleteHook('toptal/example', 11)).toBe('deleted');
-    expect(await client().deleteHook('toptal/example', 11)).toBe('missing');
+    expect(await client().deleteHook('acme-labs/example', 11)).toBe('deleted');
+    expect(await client().deleteHook('acme-labs/example', 11)).toBe('missing');
     fake.patch({ hooks: [{ id: 13, name: 'cli', active: true }], deleteFails: [13] });
-    await expect(client().deleteHook('toptal/example', 13)).rejects.toThrow(GhError);
+    await expect(client().deleteHook('acme-labs/example', 13)).rejects.toThrow(GhError);
   });
 
   it('pings a hook and reports a hook that is gone as null', async () => {
-    await client().pingHook('toptal/example', 11);
+    await client().pingHook('acme-labs/example', 11);
     expect(fake.state().pinged).toEqual([11]);
-    expect(await client().hook('toptal/example', 11)).toMatchObject({ id: 11, active: true });
-    expect(await client().hook('toptal/example', 999)).toBeNull();
+    expect(await client().hook('acme-labs/example', 11)).toMatchObject({ id: 11, active: true });
+    expect(await client().hook('acme-labs/example', 999)).toBeNull();
   });
 
   it('never puts a token or a body in the argv it runs', async () => {
     await client().authLogin();
-    await client().listCliHooks('toptal/example');
+    await client().listCliHooks('acme-labs/example');
     expect(fake.log().flat().join(' ')).not.toMatch(/secret|token|ghp_/i);
   });
 });

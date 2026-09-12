@@ -4,7 +4,7 @@ import { WebhookSecret } from './secret.js';
 import { createListener, type DeliveryHeaders, type Listener, type ListenerLogEntry } from './listener.js';
 
 const FAKE_SECRET = 'test-only-fake-secret';
-const REPO = 'toptal/some-repo';
+const REPO = 'acme-labs/some-repo';
 const DELIVERY = '72d3162e-cc78-11e3-81ab-4c9367dc0958';
 const SENTINEL = 'zz-untrusted-comment-body-marker-zz';
 
@@ -14,7 +14,7 @@ const sign = (raw: Buffer | string): string =>
 const payloadJson = (overrides: Record<string, unknown> = {}): string =>
   JSON.stringify({
     action: 'created',
-    repository: { full_name: 'Toptal/Some-Repo' },
+    repository: { full_name: 'Acme-Labs/Some-Repo' },
     issue: { number: 7, pull_request: {} },
     comment: { id: 1, body: SENTINEL },
     ...overrides,

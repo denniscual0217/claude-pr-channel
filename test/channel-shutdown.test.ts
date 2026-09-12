@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
@@ -11,11 +11,18 @@ import { FIXTURE_REPO, FIXTURE_HEAD_SHA } from './fixtures/index.js';
 const SERVER = join(import.meta.dir, '..', 'server.ts');
 
 let dir: string;
+let configPath: string;
 let fake: FakeGh;
 const spawned: { kill(signal?: NodeJS.Signals): void }[] = [];
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'pr-channel-e2e-'));
+  configPath = join(dir, 'config.json');
+  writeFileSync(
+    configPath,
+    JSON.stringify({ authors: { mode: 'listed', allow: ['octo-worker'] }, cache: { dir } }),
+    'utf8',
+  );
   fake = fakeGhEnv(dir, {
     login: 'octo-worker',
     hooks: [{ id: 7, name: 'cli', active: true }],
@@ -46,12 +53,13 @@ afterEach(() => {
 interface Channel {
   readonly exited: Promise<number>;
   call(id: number, name: string, args: Record<string, unknown>): Promise<string>;
+  awaitLog(match: string): Promise<string>;
   closeStderr(): Promise<void>;
   closeStdin(): void;
   kill(signal: NodeJS.Signals): void;
 }
 
-function startChannel(): Channel {
+function startChannel(extraEnv: Record<string, string> = {}): Channel {
   const child = Bun.spawn([process.execPath, SERVER], {
     cwd: dir,
     env: {
@@ -60,10 +68,10 @@ function startChannel(): Channel {
       // janitor and `gh` for everything else.
       PATH: `${FAKE_GH_DIR}:${dirname(process.execPath)}:${process.env['PATH'] ?? ''}`,
       HOME: dir,
-      PR_CHANNEL_CACHE_DIR: dir,
-      PR_CHANNEL_COMMENT_AUTHORS: 'octo-worker',
+      PR_CHANNEL_CONFIG: configPath,
       CLAUDE_PROJECT_DIR: dir,
       CLAUDE_CODE_SESSION_ID: 'session-e2e',
+      ...extraEnv,
     },
     stdin: 'pipe',
     stdout: 'pipe',
@@ -87,8 +95,21 @@ function startChannel(): Channel {
     }
   };
 
+  // Only one consumer may read the pipe, so a test either watches the log or cancels it.
+  const awaitLog = async (match: string): Promise<string> => {
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for await (const chunk of stderr as unknown as AsyncIterable<Uint8Array>) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const line = buffer.split('\n').find((candidate) => candidate.includes(match));
+      if (line !== undefined) return line;
+    }
+    throw new Error(`the channel never logged ${match}`);
+  };
+
   return {
     exited: child.exited,
+    awaitLog,
     closeStderr: () => stderr.cancel(),
     closeStdin: () => {
       stdin.end();
@@ -182,5 +203,32 @@ describe('the channel process', () => {
     expect(await channel.exited).toBe(0);
     expect(hookIds()).toEqual([7]);
     expect(markers()).toEqual([]);
+  }, 40_000);
+});
+
+describe('the config file', () => {
+  it('says at startup which file it read', async () => {
+    const channel = startChannel();
+
+    const line = await channel.awaitLog('config_loaded');
+
+    expect(JSON.parse(line)).toMatchObject({ event: 'config_loaded', path: configPath, source: 'file' });
+    channel.closeStdin();
+    expect(await channel.exited).toBe(0);
+  }, 40_000);
+
+  // The variable is gone as a value: a forgotten export in a shell profile must not
+  // quietly outrank the file a UI wrote.
+  it('refuses to track while a variable it no longer reads is set', async () => {
+    const channel = startChannel({ PR_CHANNEL_CI_EVENTS: 'all' });
+
+    const text = await channel.call(1, 'track', { pr: '42', repo: FIXTURE_REPO });
+
+    expect(text).toStartWith('config_invalid: PR_CHANNEL_CI_EVENTS is no longer read; set events.checks.wake in');
+    expect(hookIds()).toEqual([7]);
+
+    await channel.closeStderr();
+    channel.closeStdin();
+    expect(await channel.exited).toBe(0);
   }, 40_000);
 });

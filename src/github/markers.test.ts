@@ -7,7 +7,7 @@ import { createGhClient } from './gh.js';
 import { janitorAlive, markerDir, readMarkers, sweep, writeMarker } from './markers.js';
 import { processStart } from './ps.js';
 
-const REPO = 'toptal/example';
+const REPO = 'acme-labs/example';
 
 let dir: string;
 let cacheDir: string;
@@ -57,10 +57,10 @@ function unrelatedChild(): { pid: number; start: string | null; kill(signal?: No
 describe('markers', () => {
   it('names the file after the repo and the hook, and moves it when the id is confirmed', () => {
     const handle = writeMarker({ repo: REPO, sessionId: 's1', cacheDir });
-    expect(handle.path).toContain('toptal__example__pending-');
+    expect(handle.path).toContain('acme-labs__example__pending-');
     handle.update({ hookId: 11 });
-    expect(handle.path.endsWith('toptal__example__11.json')).toBe(true);
-    expect(readdirSync(markerDir(cacheDir))).toEqual(['toptal__example__11.json']);
+    expect(handle.path.endsWith('acme-labs__example__11.json')).toBe(true);
+    expect(readdirSync(markerDir(cacheDir))).toEqual(['acme-labs__example__11.json']);
     expect(readMarkers(cacheDir)[0]?.marker).toMatchObject({ repo: REPO, hookId: 11, sessionId: 's1' });
     handle.remove();
     expect(readMarkers(cacheDir)).toEqual([]);
@@ -80,7 +80,7 @@ describe('janitorAlive', () => {
     // The same pid with a start time from another era is a reused pid, not our janitor.
     expect(janitorAlive({ repo: REPO, janitorPid: janitor.pid, janitorStart: 'Mon Jan  1 00:00:00 2001' } as never)).toBe(false);
     // A janitor for a different repo is another session's business.
-    expect(janitorAlive({ repo: 'toptal/other', janitorPid: janitor.pid, janitorStart: janitor.start } as never)).toBe(false);
+    expect(janitorAlive({ repo: 'acme-labs/other', janitorPid: janitor.pid, janitorStart: janitor.start } as never)).toBe(false);
   });
 
   it('is false for a pid reused by something unrelated, and for a dead pid', () => {
@@ -183,7 +183,7 @@ describe('sweep', () => {
   });
 
   it('leaves markers for other repositories alone', async () => {
-    writeMarker({ repo: 'toptal/other', sessionId: 's1', cacheDir }).update({ hookId: 12, janitorPid: 2_147_483_646 });
+    writeMarker({ repo: 'acme-labs/other', sessionId: 's1', cacheDir }).update({ hookId: 12, janitorPid: 2_147_483_646 });
 
     const result = await sweep(gh(), { onlyRepo: REPO, cacheDir });
 

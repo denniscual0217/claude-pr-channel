@@ -2,8 +2,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { join } from 'node:path';
 import { loadConfig } from './src/config.js';
+import { trackInputJsonSchema } from './src/config-schema.js';
 import { createPrChannelServer, watchClientDisconnect } from './src/channel/server.js';
-import { Tracking, ToolError, type JanitorHandle, type TrackInput } from './src/channel/tracking.js';
+import { Tracking, ToolError, type JanitorHandle } from './src/channel/tracking.js';
 import { createGhClient } from './src/github/gh.js';
 import { spawnGhForwarder } from './src/github/forwarder.js';
 import { processStart } from './src/github/ps.js';
@@ -13,7 +14,15 @@ import { guardStdio, stderrLogger } from './src/log.js';
 // this process on its first line, and the webhook would outlive the session.
 guardStdio();
 
-const config = loadConfig(process.env);
+const configLoad = loadConfig({ env: process.env });
+if (configLoad.ok) {
+  stderrLogger('info', 'config_loaded', { path: configLoad.path, source: configLoad.source });
+} else {
+  // Logged, not fatal: the server still starts so track and status can show the message
+  // in the session, where a line on stderr would never be seen.
+  stderrLogger('error', 'config_invalid', { path: configLoad.path, problems: configLoad.error.message.split('\n') });
+}
+
 const sessionId = process.env['CLAUDE_CODE_SESSION_ID'] ?? null;
 const projectDir = process.env['CLAUDE_PROJECT_DIR'] ?? process.cwd();
 
@@ -22,7 +31,7 @@ const gh = createGhClient({ cwd: projectDir });
 
 const tracking = new Tracking({
   gh,
-  config,
+  loadConfig: () => loadConfig({ env: process.env }),
   notifier: server,
   sessionId,
   projectDir,
@@ -38,22 +47,9 @@ const TOOLS = [
     description:
       'Start delivering this GitHub pull request\'s events into this session. One PR per session. ' +
       'Blocks until the webhook is confirmed, so a success means events are flowing. Events from before this call are not replayed.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        pr: {
-          type: 'string',
-          description: 'PR number, "owner/name#n", or a github.com pull request URL. Omitted: the PR for the current branch.',
-        },
-        repo: { type: 'string', description: 'owner/name; wins over the repo implied by pr or the current checkout.' },
-        ci_events: { type: 'string', enum: ['completed', 'failures', 'all'], description: 'Which CI transitions wake the session.' },
-        required_checks: { type: 'array', items: { type: 'string' }, description: 'Check names that make up "all required green".' },
-        comment_authors: { type: 'array', items: { type: 'string' }, description: 'Logins whose comments may reach the session.' },
-        bot_comments: { type: 'string', enum: ['handle', 'ignore'] },
-        replace: { type: 'boolean', description: 'Stop the PR this session currently tracks first.' },
-      },
-      additionalProperties: false,
-    },
+    // Generated from the schema track validates against, so the enums the model is shown
+    // are the enums it is held to.
+    inputSchema: trackInputJsonSchema(),
   },
   {
     name: 'untrack',
@@ -62,14 +58,15 @@ const TOOLS = [
   },
   {
     name: 'status',
-    description: 'Report what this session is tracking, whether the forwarder is alive, and the delivery counters.',
+    description:
+      'Report what this session is tracking, whether the forwarder is alive, the config file in force and the delivery counters.',
     inputSchema: {
       type: 'object',
       properties: { verify: { type: 'boolean', description: 'Also ask GitHub whether the hook still exists.' } },
       additionalProperties: false,
     },
   },
-] as const;
+];
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
@@ -78,7 +75,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
     switch (request.params.name) {
       case 'track':
-        return ok(await tracking.track(args as TrackInput));
+        return ok(await tracking.track(args));
       case 'untrack':
         return ok(await tracking.untrack());
       case 'status':

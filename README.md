@@ -53,7 +53,8 @@ Behind those, the channel server exposes three tools:
 | `status` | Report the PR, head sha, hook id, the **live** forwarder state, the listener port and the delivery counters. `verify: true` also asks GitHub whether the hook still exists. |
 
 `track` accepts `pr`, `repo`, `ci_events`, `required_checks`, `comment_authors`,
-`bot_comments` and `replace`.
+`bot_comments` and `replace`. The four filters override the matching keys in the
+[config file](#configuration) for that one PR.
 
 ## What is delivered
 
@@ -65,10 +66,37 @@ Only what a session can act on. Everything else is counted and dropped.
 | Review with no body | No — it is the envelope around inline comments that arrive on their own |
 | CI check | `completed` (default) every finished check; `failures` only the ones that finished badly; `all` every transition |
 | All required checks green | Derived from `required_checks`, announced once per head |
-| Temploy image build | Only a successful one; a failure is not this session's to chase |
-| PR lifecycle (opened, synchronize, draft, ready, closed, merged) | Yes; `closed`/`merged` is delivered and then stops tracking |
+| Deploy workflow (`events.deployWorkflow`, off by default) | Only a successful run; a failure is not this session's to chase |
+| PR lifecycle (opened, synchronize, draft, ready, reopened, closed, merged) | Yes; `closed`/`merged` is delivered and then stops tracking |
+| Other pull_request actions (labeled, assigned, review_requested, edited, …) | Only once turned on under `events.lifecycle`; the label, assignee, reviewer or milestone it names is delivered as untrusted text |
 | Anything for another PR in the repo | No — counted as `dropped_other_pr` |
 | A green for a head the PR has already left | Delivered as history, flagged stale, never as a green light |
+
+## Editing the configuration
+
+The file is plain JSON and meant to be edited by hand. There is also a local editor:
+
+```
+bun run config
+```
+
+It serves a form on `127.0.0.1` — built from the same JSON Schema the plugin validates
+against, so an option added to the config appears in the form without anyone updating the
+UI. A **Raw JSON** tab edits the file directly, and switching tabs carries your edits
+across rather than dropping them.
+
+Saving validates through the plugin's own loader, so the editor cannot write a file the
+plugin would then refuse at startup; the error names the key, what was wrong and what was
+expected. Writes go through a temporary file and a rename, so an interrupted save leaves
+the previous config intact.
+
+It binds loopback only and has no authentication, deliberately: this file decides who may
+drive an agent that pushes code, so it must never be reachable off the machine — and
+anyone with a shell here can already edit the file directly, so the server grants nothing
+the filesystem does not. Do not port-forward it.
+
+Changes apply when a channel next starts. A session already tracking keeps the settings it
+began with.
 
 ## Security
 
@@ -84,12 +112,13 @@ problem, and anyone who can comment on the PR is speaking to your agent.
 
 Three things keep the blast radius small, and you should keep all three:
 
-- **`PR_CHANNEL_COMMENT_AUTHORS` defaults to you alone** — the account `gh` is
-  authenticated as. Widen it deliberately, one login at a time, and understand that
-  everyone you add can ask your session to change code.
+- **`authors.mode` defaults to `operator`** — you alone, the account `gh` is
+  authenticated as. Widen it deliberately (`"mode": "listed"` and one login at a time in
+  `authors.allow`), and understand that everyone you add can ask your session to change
+  code.
 - **Automated reviewers are allowed by default** because their findings are useful. A bot
   that is compromised, or simply confused, gets the same audience as a person.
-  `PR_CHANNEL_BOT_COMMENTS=ignore` turns them off.
+  `"bots": "ignore"` turns them off.
 - **The session's permission mode is the real limit.** The plugin does not sandbox
   anything: an event runs with whatever the session was launched with. Never run a
   PR-bound session with `--dangerously-skip-permissions`.
@@ -143,7 +172,8 @@ Every path leaves nothing behind, and every delete is idempotent — a 404 count
 | The channel is SIGKILLed | The janitor: its stdin pipe closes and its parent pid changes, so it kills `gh` and deletes the hook |
 | The channel **and** the janitor are killed together, or the machine crashes | The next `track` on this machine: it sweeps the markers left behind |
 
-Markers live under `${XDG_CACHE_HOME:-~/.cache}/claude-pr-channel/hooks/`. They name the
+Markers live under `${XDG_CACHE_HOME:-~/.cache}/claude-pr-channel/hooks/`, or under
+`<cache.dir>/hooks/` when the config names one. They name the
 hook, the `gh` pid, the janitor pid and any hook whose DELETE failed, and nothing else —
 never a secret. The sweep only ever touches a hook that has a marker whose janitor is
 dead, which is what keeps it from disturbing another live session, another machine, or a
@@ -172,24 +202,106 @@ names; a hook deleted that way would silently stop another session's events.
 
 ## Configuration
 
-Tool arguments win; these are the defaults.
+One JSON file, at `${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json`.
+`PR_CHANNEL_CONFIG=/abs/path.json` points the plugin at a different file; that is a
+location, not a setting, and it is the only environment variable involved.
 
-| variable | meaning |
+A missing file is fine: the plugin runs on the defaults below and `track` and `status`
+say where it looked. A file that is present but invalid is never fallen back from — the
+error names the key, what was wrong and what was expected, and `track` refuses until it
+is fixed. A file `PR_CHANNEL_CONFIG` names must exist.
+
+Precedence, per track: **a tool argument**, then **this file**, then **the built-in
+default**. The `filters:` line in the `track` output says which of the three each value
+came from. An argument is checked against the same definition as the file and refused the
+same way — `invalid_argument`, naming the argument, what it got and what was expected.
+MCP validates the request, never a tool's own input schema, so the layer that outranks
+everything else is the one that most needs parsing before it is used.
+
+Every key is optional and `{}` is a valid file; a defaulted object fills in its children.
+These are the defaults in full:
+
+```json
+{
+  "$schema": "./schema/config.schema.json",
+  "version": 1,
+  "events": {
+    "comments": { "enabled": true },
+    "reviews": { "enabled": true },
+    "reviewComments": { "enabled": true },
+    "checks": { "enabled": true, "wake": "completed" },
+    "requiredChecks": { "enabled": true, "names": [] },
+    "deployWorkflow": { "enabled": false, "workflowName": null },
+    "lifecycle": {
+      "opened": true, "synchronize": true, "ready_for_review": true,
+      "converted_to_draft": true, "reopened": true, "closed": true, "merged": true,
+      "labeled": false, "unlabeled": false, "assigned": false, "unassigned": false,
+      "review_requested": false, "review_request_removed": false, "edited": false,
+      "milestoned": false, "demilestoned": false, "locked": false, "unlocked": false,
+      "auto_merge_enabled": false, "auto_merge_disabled": false,
+      "enqueued": false, "dequeued": false
+    }
+  },
+  "authors": { "mode": "operator", "allow": [], "bots": "handle" },
+  "limits": {
+    "maxPayloadBytes": 1048576,
+    "rateLimit": { "maxDeliveries": 120, "windowMs": 60000 }
+  },
+  "cache": { "dir": null, "sweepOnTrack": true }
+}
+```
+
+`authors.mode` is `operator` (the `gh` login alone), `listed` (exactly `authors.allow`) or
+`anyone`. `events.checks.wake` is `failures`, `completed` or `all`. A deploy workflow is
+matched on `workflow_run.name`, exactly and case-sensitively, and `enabled: true` requires
+a name.
+
+**Disabled means silent, not blind.** The switch is applied last, after normalization: a
+disabled `synchronize` still advances the head, so later events are still marked stale; a
+disabled `checks` still records check states, so all-required-green is still announced; a
+disabled `closed`/`merged` still ends tracking, the session is simply not told. Suppressed
+events are counted in the `suppressed` counter.
+
+### The schema
+
+`schema/config.schema.json` is a JSON Schema (draft 2020-12) generated from the same
+definition that validates the file, so the two cannot drift. Point an editor at it with
+`$schema`, or read it from `<CLAUDE_PLUGIN_ROOT>/schema/config.schema.json` — `status`
+prints that path. Regenerate it with `bun run schema` after changing `src/config-schema.ts`;
+`bun test` fails if the committed file is stale.
+
+Adding an option that is not in the schema is a code change on purpose: an unknown key is
+rejected with the list of keys that would have worked, rather than accepted and silently
+delivering nothing. A pull_request action outside the catalogue, a new GitHub event or a
+second deploy workflow all need a normalizer branch as well as a key.
+
+### Environment variables this replaced
+
+All nine are gone as values. One source, one file: a forgotten `export` that outranked a
+file a UI had just written is exactly the surprise this avoids. Any of them still set at
+startup makes `track` refuse, naming the key that took over.
+
+| gone | now |
 | --- | --- |
-| `PR_CHANNEL_COMMENT_AUTHORS` | Logins whose comments may reach the session. Default: the `gh` login at `track` time |
-| `PR_CHANNEL_BOT_COMMENTS` | `handle` (default) or `ignore` |
-| `PR_CHANNEL_CI_EVENTS` | `completed` (default), `failures`, `all` |
-| `PR_CHANNEL_REQUIRED_CHECKS` | Comma-separated check names for all-required-green |
-| `PR_CHANNEL_MAX_PAYLOAD_BYTES` | Delivery size cap, default 1 MiB |
-| `PR_CHANNEL_RATE_LIMIT_MAX` / `_WINDOW_MS` | Signed deliveries per window, default 120/60s |
-| `PR_CHANNEL_CACHE_DIR` | Marker directory override (used by the tests) |
-| `PR_CHANNEL_SWEEP` | `off` skips the startup sweep |
+| `PR_CHANNEL_COMMENT_AUTHORS` | `authors.mode` / `authors.allow` |
+| `PR_CHANNEL_BOT_COMMENTS` | `authors.bots` |
+| `PR_CHANNEL_CI_EVENTS` | `events.checks.wake` |
+| `PR_CHANNEL_REQUIRED_CHECKS` | `events.requiredChecks.names` |
+| `PR_CHANNEL_MAX_PAYLOAD_BYTES` | `limits.maxPayloadBytes` |
+| `PR_CHANNEL_RATE_LIMIT_MAX` / `_WINDOW_MS` | `limits.rateLimit.maxDeliveries` / `.windowMs` |
+| `PR_CHANNEL_CACHE_DIR` | `cache.dir` |
+| `PR_CHANNEL_SWEEP` | `cache.sweepOnTrack` |
+
+What remains in the environment is never a setting: `PR_CHANNEL_CONFIG` (where the file
+is), `XDG_CONFIG_HOME` / `XDG_CACHE_HOME` / `HOME` (platform conventions), and the
+variables Claude Code sets for the plugin.
 
 ## Development
 
 ```
 bun install
 bun test
+bun run schema   # after changing src/config-schema.ts
 ```
 
 The suite is offline. `test/setup.ts` puts a `gh` shim first on `PATH` and the shim exits

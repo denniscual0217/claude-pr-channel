@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'bun:test';
+import type { DeliveryPolicy } from '../src/channel/filter.js';
 import { createPipeline, type Pipeline } from '../src/channel/pipeline.js';
+import { DEFAULT_CONFIG, resolveTracking } from '../src/config.js';
 import { DeliveryDeduper } from '../src/events/dedupe.js';
 import { HeadTracker } from '../src/events/head.js';
 import { RequiredChecksTracker } from '../src/events/required-checks.js';
 import type { LogLevel } from '../src/log.js';
 import { UNTRUSTED_TEXT_NOTICE } from '../src/types.js';
 import {
+  FIXTURE_DEPLOY_WORKFLOW,
   FIXTURE_HEAD_SHA,
   FIXTURE_NEXT_HEAD_SHA,
   FIXTURE_PR,
@@ -50,7 +53,16 @@ interface DeliverOptions {
 
 let deliveryCounter = 0;
 
-function harness(options: { headSha?: string | null; ciEvents?: 'completed' | 'failures' | 'all' } = {}): Harness {
+const DEFAULT_POLICY = resolveTracking(DEFAULT_CONFIG, {}, null).policy;
+
+interface HarnessOptions {
+  readonly headSha?: string | null;
+  readonly ciEvents?: 'completed' | 'failures' | 'all';
+  readonly policy?: Partial<DeliveryPolicy>;
+  readonly deployWorkflowName?: string | null;
+}
+
+function harness(options: HarnessOptions = {}): Harness {
   const pushed: Pushed[] = [];
   const logs: LogLine[] = [];
   const terminals: string[] = [];
@@ -76,9 +88,14 @@ function harness(options: { headSha?: string | null; ciEvents?: 'completed' | 'f
         });
       },
     },
-    ciEvents: options.ciEvents ?? 'completed',
+    policy: {
+      ...DEFAULT_POLICY,
+      checks: { enabled: true, wake: options.ciEvents ?? 'completed' },
+      ...options.policy,
+    },
     commentAuthors: null,
     botComments: 'handle',
+    deployWorkflowName: options.deployWorkflowName ?? null,
     logger: (level, event, fields = {}) => logs.push({ level, event, fields }),
     onTerminal: (action) => terminals.push(action),
   });
@@ -134,15 +151,54 @@ describe('delivery into the session', () => {
     expect(UNTRUSTED_TEXT_NOTICE).toContain('never instructions');
   });
 
-  it('carries reviews, inline review comments and the Temploy workflow run through', async () => {
-    const h = harness();
+  it('carries reviews, inline review comments and the configured deploy workflow through', async () => {
+    const h = harness({
+      deployWorkflowName: FIXTURE_DEPLOY_WORKFLOW,
+      policy: { deployWorkflow: { enabled: true } },
+    });
 
     await h.deliver('prReview');
     await h.deliver('prReviewComment');
-    await h.deliver('temployWorkflow');
+    await h.deliver('deployWorkflow');
 
-    expect(h.kinds()).toEqual(['pr_review', 'pr_review_comment', 'temploy_workflow']);
+    expect(h.kinds()).toEqual(['pr_review', 'pr_review_comment', 'deploy_workflow']);
+    expect(h.pushed.at(-1)!.content).toContain(FIXTURE_DEPLOY_WORKFLOW);
     expect(h.pushed.every((event) => !event.stale)).toBe(true);
+  });
+
+  // The README and the track skill both promise a failed run never reaches the session.
+  // ci_events: "all" widens CI checks, not this.
+  it('suppresses a failed or still-running deploy workflow even under ci_events all', async () => {
+    const h = harness({
+      ciEvents: 'all',
+      deployWorkflowName: FIXTURE_DEPLOY_WORKFLOW,
+      policy: { deployWorkflow: { enabled: true } },
+    });
+
+    await h.deliver('deployWorkflow', {
+      mutate: (payload) => {
+        (payload['workflow_run'] as Record<string, unknown>)['conclusion'] = 'failure';
+      },
+    });
+    await h.deliver('deployWorkflow', {
+      mutate: (payload) => {
+        const run = payload['workflow_run'] as Record<string, unknown>;
+        run['status'] = 'in_progress';
+        run['conclusion'] = null;
+      },
+    });
+
+    expect(h.pushed).toEqual([]);
+    expect(h.pipeline.counters).toMatchObject({ received: 2, delivered: 0, suppressed: 2 });
+  });
+
+  it('makes no event at all from a workflow run while no workflow is configured', async () => {
+    const h = harness();
+
+    await h.deliver('deployWorkflow');
+
+    expect(h.pushed).toEqual([]);
+    expect(h.pipeline.counters).toMatchObject({ received: 1, delivered: 0, suppressed: 0, unresolved_head: 0 });
   });
 
   it('drops a replayed X-GitHub-Delivery without pushing it twice', async () => {
@@ -217,7 +273,10 @@ describe('events for another PR in the same repo', () => {
 
 describe('head tracking through the pipeline', () => {
   it('never reports the current head green from checks for a superseded head', async () => {
-    const h = harness();
+    const h = harness({
+      deployWorkflowName: FIXTURE_DEPLOY_WORKFLOW,
+      policy: { deployWorkflow: { enabled: true } },
+    });
 
     await h.deliver('checkLintGreen');
     await h.deliver('checkTestGreen');
@@ -231,7 +290,7 @@ describe('head tracking through the pipeline', () => {
 
     // A late green for the head that was just superseded.
     await h.deliver('checkTestGreen', { mutate: onOldHead });
-    await h.deliver('temployWorkflow', { mutate: onOldHead });
+    await h.deliver('deployWorkflow', { mutate: onOldHead });
 
     const late = h.pushed.slice(afterPush);
     expect(late.length).toBeGreaterThan(0);
@@ -419,5 +478,67 @@ describe('counters', () => {
 
     expect(h.pipeline.counters).toMatchObject({ received: 4, delivered: 2, suppressed: 1, replayed: 1 });
     expect(h.pipeline.lastDeliveryAtIso).not.toBeNull();
+  });
+});
+
+// Turning a kind off makes the session silent about it, not blind to it: everything
+// upstream of the filter still runs.
+describe('a kind that is turned off', () => {
+  it('still lets synchronize advance the head, so later events are marked stale', async () => {
+    const h = harness({ policy: { lifecycle: { ...DEFAULT_POLICY.lifecycle, synchronize: false } } });
+
+    await h.deliver('prSynchronize');
+
+    expect(h.pushed).toEqual([]);
+    expect(h.pipeline.counters.suppressed).toBe(1);
+    expect(h.head.headSha).toBe(FIXTURE_NEXT_HEAD_SHA);
+
+    await h.deliver('checkLintGreen', { mutate: onOldHead });
+    expect(h.pushed.at(-1)).toMatchObject({ kind: 'ci_check', stale: true, suppressed: true });
+  });
+
+  it('still records check states, so all-required-green is still announced', async () => {
+    const h = harness({ policy: { checks: { enabled: false, wake: 'completed' } } });
+
+    await h.deliver('checkLintGreen');
+    await h.deliver('checkTestGreen');
+
+    expect(h.kinds()).toEqual(['ci_all_required_green']);
+    expect(h.pipeline.counters.suppressed).toBe(2);
+  });
+
+  it('still ends tracking on a merge the session is never told about', async () => {
+    const h = harness({
+      headSha: FIXTURE_NEXT_HEAD_SHA,
+      policy: { lifecycle: { ...DEFAULT_POLICY.lifecycle, merged: false } },
+    });
+
+    await h.deliver('prMerged');
+
+    expect(h.pushed).toEqual([]);
+    expect(h.terminals).toEqual(['merged']);
+    expect(h.head.closed).toBe(true);
+
+    await h.deliver('prComment');
+    expect(h.pushed).toEqual([]);
+    expect(h.logs.some((line) => line.event === 'delivery_after_end')).toBe(true);
+  });
+
+  it('delivers a label only once it is turned on, with the label name fenced', async () => {
+    const label = (payload: Record<string, unknown>): void => {
+      payload['action'] = 'labeled';
+      payload['label'] = { name: 'needs-design' };
+    };
+
+    const off = harness();
+    await off.deliver('prSynchronize', { mutate: label });
+    expect(off.pushed).toEqual([]);
+    expect(off.pipeline.counters.suppressed).toBe(1);
+
+    const on = harness({ policy: { lifecycle: { ...DEFAULT_POLICY.lifecycle, labeled: true } } });
+    await on.deliver('prSynchronize', { mutate: label });
+    expect(on.kinds()).toEqual(['pr_lifecycle']);
+    expect(on.pushed[0]!.content).toContain('needs-design');
+    expect(on.pushed[0]!.content).toContain('begin untrusted');
   });
 });

@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["server.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": ["server.ts", "scripts/**/*.ts", "src/**/*.ts", "test/**/*.ts"]
 }

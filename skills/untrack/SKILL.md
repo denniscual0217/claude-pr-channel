@@ -2,7 +2,7 @@
 name: untrack
 description: Stop delivering a GitHub pull request's events into this Claude Code session and delete the webhook this session created. Triggers on "stop watching this PR", "unsubscribe from the PR", "/pr-channel:untrack", or asking to stop tracking.
 allowed-tools: Bash, Read
-version: 3.0.0
+version: 4.0.0
 ---
 
 # PR Channel — untrack

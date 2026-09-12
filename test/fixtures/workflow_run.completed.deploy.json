@@ -2,12 +2,12 @@
   "action": "completed",
   "workflow": {
     "id": 660011,
-    "name": "Build Temploy Image",
-    "path": ".github/workflows/temploy.yml"
+    "name": "Build Preview Image",
+    "path": ".github/workflows/preview-image.yml"
   },
   "workflow_run": {
     "id": 9900110022,
-    "name": "Build Temploy Image",
+    "name": "Build Preview Image",
     "node_id": "WFR_kwDOA1b2c3M5OTAw",
     "head_branch": "feature/widget-cache",
     "head_sha": "4d0f1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b",

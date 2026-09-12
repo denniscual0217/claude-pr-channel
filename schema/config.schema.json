@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "config.schema.json",
+  "title": "claude-pr-channel configuration",
+  "description": "Configuration for the claude-pr-channel Claude Code plugin, read from ${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json, or from the file named by PR_CHANNEL_CONFIG. Every key is optional and {} is a valid file. Precedence for the settings a track call can also carry: the tool argument, then this file, then the built-in default.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "Optional path or URL to this JSON Schema, for editors. Ignored by the plugin.",
+      "type": "string"
+    },
+    "version": {
+      "default": 1,
+      "description": "Config format version. 1 is the only accepted value; it is bumped only for an incompatible change of shape.",
+      "type": "number",
+      "const": 1
+    },
+    "events": {
+      "description": "Which kinds of event may wake the session. Disabled means silent, not blind: the event is still normalized and still updates the head and the check state, it just does not interrupt.",
+      "default": {},
+      "type": "object",
+      "properties": {
+        "comments": {
+          "description": "Conversation comments (GitHub issue_comment on the PR).",
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Deliver conversation comments on the pull request.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "reviews": {
+          "description": "Pull request reviews. A review with no body is never delivered; its inline comments arrive on their own.",
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Deliver submitted reviews that carry a body.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "reviewComments": {
+          "description": "Inline review comments on a line of the diff.",
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Deliver inline review comments, which are answered in their own thread.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "checks": {
+          "description": "CI checks: check_run, check_suite and legacy commit statuses.",
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Deliver CI check results. Disabling stays silent, not blind: check states are still recorded, so all-required-green can still be announced.",
+              "type": "boolean"
+            },
+            "wake": {
+              "default": "completed",
+              "description": "Which CI transitions are worth a turn of the session: \"failures\" only the ones that finished badly, \"completed\" every finished check, \"all\" every transition including queued and in progress. It decides CI checks only; events.deployWorkflow is unaffected.",
+              "type": "string",
+              "enum": [
+                "failures",
+                "completed",
+                "all"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "requiredChecks": {
+          "description": "The derived \"all required checks are green\" event.",
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": true,
+              "description": "Announce once per head that every required check is green.",
+              "type": "boolean"
+            },
+            "names": {
+              "default": [],
+              "description": "The check names that make up \"all required green\". GitHub payloads never say which checks a branch rule requires, so it is derived from this list; an empty list is never announced.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "deployWorkflow": {
+          "description": "A deploy or image-build workflow. Off until a name is configured; there is no default workflow.",
+          "default": {},
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Deliver the result of one named GitHub Actions workflow whose successful run means what it builds is ready. Only a successful run wakes the session: a failed or still-running one never does, whatever events.checks.wake says.",
+              "type": "boolean"
+            },
+            "workflowName": {
+              "default": null,
+              "description": "The workflow name to match, exactly and case-sensitively, against workflow_run.name. Required when enabled is true.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "lifecycle": {
+          "description": "Pull request lifecycle actions, keyed by GitHub's own action names. An action not listed here needs code, not configuration.",
+          "default": {},
+          "type": "object",
+          "properties": {
+            "opened": {
+              "default": true,
+              "description": "The pull request was opened.",
+              "type": "boolean"
+            },
+            "synchronize": {
+              "default": true,
+              "description": "New commits were pushed, so the code under review changed.",
+              "type": "boolean"
+            },
+            "ready_for_review": {
+              "default": true,
+              "description": "The pull request left draft.",
+              "type": "boolean"
+            },
+            "converted_to_draft": {
+              "default": true,
+              "description": "The pull request went back to draft.",
+              "type": "boolean"
+            },
+            "reopened": {
+              "default": true,
+              "description": "A closed pull request was reopened.",
+              "type": "boolean"
+            },
+            "closed": {
+              "default": true,
+              "description": "The pull request was closed without merging. Tracking ends either way; this only decides whether the session is told.",
+              "type": "boolean"
+            },
+            "merged": {
+              "default": true,
+              "description": "GitHub's closed action with merged=true, split out so it can be enabled on its own. Tracking ends either way; this only decides whether the session is told.",
+              "type": "boolean"
+            },
+            "labeled": {
+              "default": false,
+              "description": "A label was added. The label name is delivered as untrusted text.",
+              "type": "boolean"
+            },
+            "unlabeled": {
+              "default": false,
+              "description": "A label was removed. The label name is delivered as untrusted text.",
+              "type": "boolean"
+            },
+            "assigned": {
+              "default": false,
+              "description": "Someone was assigned.",
+              "type": "boolean"
+            },
+            "unassigned": {
+              "default": false,
+              "description": "Someone was unassigned.",
+              "type": "boolean"
+            },
+            "review_requested": {
+              "default": false,
+              "description": "A review was requested from a user or a team.",
+              "type": "boolean"
+            },
+            "review_request_removed": {
+              "default": false,
+              "description": "A review request was withdrawn.",
+              "type": "boolean"
+            },
+            "edited": {
+              "default": false,
+              "description": "The title, body or base branch was edited.",
+              "type": "boolean"
+            },
+            "milestoned": {
+              "default": false,
+              "description": "The pull request was added to a milestone.",
+              "type": "boolean"
+            },
+            "demilestoned": {
+              "default": false,
+              "description": "The pull request was removed from a milestone.",
+              "type": "boolean"
+            },
+            "locked": {
+              "default": false,
+              "description": "The conversation was locked.",
+              "type": "boolean"
+            },
+            "unlocked": {
+              "default": false,
+              "description": "The conversation was unlocked.",
+              "type": "boolean"
+            },
+            "auto_merge_enabled": {
+              "default": false,
+              "description": "Auto-merge was enabled.",
+              "type": "boolean"
+            },
+            "auto_merge_disabled": {
+              "default": false,
+              "description": "Auto-merge was disabled.",
+              "type": "boolean"
+            },
+            "enqueued": {
+              "default": false,
+              "description": "The pull request entered a merge queue.",
+              "type": "boolean"
+            },
+            "dequeued": {
+              "default": false,
+              "description": "The pull request left a merge queue.",
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "authors": {
+      "description": "Who may drive this session through comments and reviews.",
+      "default": {},
+      "type": "object",
+      "properties": {
+        "mode": {
+          "default": "operator",
+          "description": "Whose comments and reviews may reach the session: \"operator\" only the login gh is authenticated as, \"listed\" exactly the logins in allow, \"anyone\" every human author. Acting on a comment means pushing code, so this is a trust boundary, not a preference.",
+          "type": "string",
+          "enum": [
+            "operator",
+            "listed",
+            "anyone"
+          ]
+        },
+        "allow": {
+          "default": [],
+          "description": "GitHub logins, compared case-insensitively. Used when mode is \"listed\"; kept but unused under the other modes.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bots": {
+          "default": "handle",
+          "description": "Automated reviewers ([bot] accounts): \"handle\" treats their findings like anyone else's, \"ignore\" drops them.",
+          "type": "string",
+          "enum": [
+            "handle",
+            "ignore"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "limits": {
+      "description": "Limits the loopback listener enforces on incoming deliveries.",
+      "default": {},
+      "type": "object",
+      "properties": {
+        "maxPayloadBytes": {
+          "default": 1048576,
+          "description": "Largest delivery body accepted, in bytes. GitHub's own webhook cap is 25 MiB.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 26214400
+        },
+        "rateLimit": {
+          "description": "Rate limit applied to verified deliveries.",
+          "default": {},
+          "type": "object",
+          "properties": {
+            "maxDeliveries": {
+              "default": 120,
+              "description": "Signed deliveries accepted per window before the listener starts refusing.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "windowMs": {
+              "default": 60000,
+              "description": "Length of the rate-limit window, in milliseconds.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "cache": {
+      "description": "The on-disk markers that make cleanup survive a killed session.",
+      "default": {},
+      "type": "object",
+      "properties": {
+        "dir": {
+          "default": null,
+          "description": "Where webhook markers are kept. null means ${XDG_CACHE_HOME:-~/.cache}/claude-pr-channel; markers live under <dir>/hooks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sweepOnTrack": {
+          "default": true,
+          "description": "Sweep markers left by dead sessions at the start of every track, deleting the webhooks they leaked.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

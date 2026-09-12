@@ -30,7 +30,7 @@ describe('event and repo allowlists', () => {
   });
 
   it('extracts repository.full_name only from a well-formed payload', () => {
-    expect(extractRepoFullName({ repository: { full_name: 'Toptal/Repo' } })).toBe('Toptal/Repo');
+    expect(extractRepoFullName({ repository: { full_name: 'Acme-Labs/Repo' } })).toBe('Acme-Labs/Repo');
     expect(extractRepoFullName({ repository: { full_name: '' } })).toBeNull();
     expect(extractRepoFullName({ repository: { full_name: 7 } })).toBeNull();
     expect(extractRepoFullName({ repository: null })).toBeNull();

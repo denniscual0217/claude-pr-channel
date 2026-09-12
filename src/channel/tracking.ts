@@ -1,6 +1,9 @@
-import type { Config } from '../config.js';
+import { join } from 'node:path';
+import type { ConfigLoad, EffectiveSettings } from '../config.js';
+import { parseTrackInput, resolveTracking, schemaPath } from '../config.js';
 import { DeliveryDeduper } from '../events/dedupe.js';
 import { HeadTracker } from '../events/head.js';
+import type { BotComments } from '../events/normalize.js';
 import { normalizeRepo, parsePrRef } from '../events/repo.js';
 import { RequiredChecksTracker } from '../events/required-checks.js';
 import type { GhClient, PrInfo } from '../github/gh.js';
@@ -18,6 +21,10 @@ import { generateWebhookSecret, type WebhookSecret } from '../webhook/secret.js'
 import type { CiEvents } from './filter.js';
 import { createPipeline, type Pipeline } from './pipeline.js';
 import type { ChannelNotifier } from './server.js';
+
+// This file lives at <plugin root>/src/channel, and the committed JSON Schema next to it
+// is what a configuration UI reads without running Bun.
+const PLUGIN_ROOT = join(import.meta.dir, '..', '..');
 
 export type TrackingState = 'idle' | 'starting' | 'tracking' | 'stopping';
 
@@ -38,19 +45,24 @@ export interface JanitorHandle {
   closeStdin(): void;
 }
 
+// What a track call may carry, once parseTrackInput has checked it. TrackInputSchema is
+// what produces a value of this type, so a field added to one and not the other stops
+// compiling in parseTrackInput.
 export interface TrackInput {
-  readonly pr?: string;
-  readonly repo?: string;
-  readonly ci_events?: CiEvents;
-  readonly required_checks?: readonly string[];
-  readonly comment_authors?: readonly string[];
-  readonly bot_comments?: 'handle' | 'ignore';
-  readonly replace?: boolean;
+  readonly pr?: string | undefined;
+  readonly repo?: string | undefined;
+  readonly ci_events?: CiEvents | undefined;
+  readonly required_checks?: readonly string[] | undefined;
+  readonly comment_authors?: readonly string[] | undefined;
+  readonly bot_comments?: BotComments | undefined;
+  readonly replace?: boolean | undefined;
 }
 
 export interface TrackingDeps {
   readonly gh: GhClient;
-  readonly config: Config;
+  // Re-read on every track, so a file a UI edited takes effect without restarting the
+  // session: the channel lives as long as the session and cannot be restarted alone.
+  readonly loadConfig: () => ConfigLoad;
   readonly notifier: ChannelNotifier;
   readonly sessionId: string | null;
   readonly projectDir: string;
@@ -80,8 +92,8 @@ interface ActiveTracking {
   readonly marker: MarkerHandle;
   readonly pipeline: Pipeline;
   readonly requiredChecks: RequiredChecksTracker;
-  readonly ciEvents: CiEvents;
-  readonly commentAuthors: ReadonlySet<string> | null;
+  readonly settings: EffectiveSettings;
+  readonly configLine: string;
   readonly startedAtIso: string;
   // Set the moment tear-down begins. The restart callbacks are bound to the tracking they
   // were created for rather than to whatever is current, so a restart waking inside
@@ -138,7 +150,12 @@ export class Tracking {
     return this.#active?.prRef ?? null;
   }
 
-  async track(input: TrackInput): Promise<string> {
+  // Takes the raw tool arguments, not a TrackInput: this is where whatever the model
+  // emitted becomes a value the rest of the channel is allowed to trust.
+  async track(rawInput: unknown): Promise<string> {
+    const parsed = parseTrackInput(rawInput);
+    if (!parsed.ok) throw new ToolError('invalid_argument', parsed.message);
+    const input = parsed.input;
     if (this.#state === 'starting' || this.#state === 'stopping') {
       throw new ToolError('busy', `tracking is ${this.#state}; try again in a moment`);
     }
@@ -163,6 +180,8 @@ export class Tracking {
 
   async #start(input: TrackInput): Promise<string> {
     const gh = this.#deps.gh;
+    const load = this.#deps.loadConfig();
+    if (!load.ok) throw new ToolError('config_invalid', load.error.message);
     const login = await this.#ghLogin();
     const pr = await this.#resolvePr(input);
     if (pr.state !== 'OPEN') {
@@ -174,18 +193,14 @@ export class Tracking {
     await this.#requireWebhookExtension();
 
     const prRef: PrRef = { repo: normalizeRepo(pr.repo), prNumber: pr.number };
-    const sweepResult = await this.#sweep(prRef.repo);
-
-    const ciEvents = input.ci_events ?? this.#deps.config.ciEvents;
-    const requiredChecks = input.required_checks ?? this.#deps.config.requiredChecks;
-    const commentAuthors = resolveCommentAuthors(input.comment_authors, this.#deps.config.commentAuthors, login);
-    const botComments = input.bot_comments ?? this.#deps.config.botComments;
+    const settings = resolveTracking(load.config, input, login);
+    const sweepResult = await this.#sweep(prRef.repo, settings);
 
     const head = new HeadTracker(prRef, pr.isDraft ? 'draft' : 'open');
     head.seed(pr.headRefOid, this.#now().toISOString());
 
     const secret = generateWebhookSecret();
-    const checks = new RequiredChecksTracker(requiredChecks);
+    const checks = new RequiredChecksTracker(settings.requiredChecks);
     const deduper = new DeliveryDeduper();
 
     this.#pingedHookIds = new Set();
@@ -195,8 +210,8 @@ export class Tracking {
     const listener = (this.#deps.createListener ?? realCreateListener)({
       verifier: secret,
       expectedRepo: prRef.repo,
-      maxPayloadBytes: this.#deps.config.maxPayloadBytes,
-      rateLimit: this.#deps.config.rateLimit,
+      maxPayloadBytes: settings.limits.maxPayloadBytes,
+      rateLimit: settings.limits.rateLimit,
       onDelivery: async (headers, payload) => {
         await pipelineRef.current?.handleDelivery(headers, payload);
       },
@@ -212,7 +227,7 @@ export class Tracking {
     const marker = writeMarker({
       repo: prRef.repo,
       sessionId: this.#deps.sessionId,
-      cacheDir: this.#deps.config.cacheDir,
+      cacheDir: settings.cache.dir,
     });
     const janitor = this.#deps.spawnJanitor(prRef.repo);
     janitor.send({ repo: prRef.repo, marker: marker.path });
@@ -285,9 +300,10 @@ export class Tracking {
       deduper,
       requiredChecks: checks,
       notifier: this.#deps.notifier,
-      ciEvents,
-      commentAuthors,
-      botComments,
+      policy: settings.policy,
+      commentAuthors: settings.commentAuthors,
+      botComments: settings.botComments,
+      deployWorkflowName: settings.deployWorkflowName,
       logger: this.#log,
       now: this.#now,
       onTerminal: (action) => {
@@ -308,8 +324,8 @@ export class Tracking {
       marker,
       pipeline,
       requiredChecks: checks,
-      ciEvents,
-      commentAuthors,
+      settings,
+      configLine: configLine(load),
       startedAtIso: this.#now().toISOString(),
       snapshot,
       pendingDeletes: new Set<number>(),
@@ -358,7 +374,7 @@ export class Tracking {
       head_sha: head.headSha,
     });
 
-    return this.#startedText(active, sweepResult, requiredChecks);
+    return this.#startedText(active, sweepResult);
   }
 
   async untrack(): Promise<string> {
@@ -404,10 +420,19 @@ export class Tracking {
   async status(verify = false): Promise<string> {
     const active = this.#active;
     if (active === null) {
+      const load = this.#deps.loadConfig();
+      const config = load.ok
+        ? [configLine(load)]
+        : [`config: ${load.path} (INVALID — track will refuse until this is fixed)`, ...load.error.message.split('\n')];
       const ended = this.#ended;
       return ended === null
-        ? 'tracking: no'
-        : [`tracking: no`, `ended: ${ended.reason} at ${ended.atIso}`, `last pr: ${prKey(ended.prRef)}`].join('\n');
+        ? ['tracking: no', ...config].join('\n')
+        : [
+            'tracking: no',
+            `ended: ${ended.reason} at ${ended.atIso}`,
+            `last pr: ${prKey(ended.prRef)}`,
+            ...config,
+          ].join('\n');
     }
     const counters = active.pipeline.counters;
     const lines = [
@@ -420,9 +445,8 @@ export class Tracking {
       `forwarder: ${forwarderLine(active.forwarder)}`,
       `listener: 127.0.0.1:${active.listener.port}`,
       `last delivery: ${active.pipeline.lastDeliveryAtIso ?? 'none yet'}`,
-      `filters: ci_events=${active.ciEvents}, required_checks=[${active.requiredChecks.requiredChecks.join(', ')}], comment_authors=${
-        active.commentAuthors === null ? 'anyone' : [...active.commentAuthors].join(', ')
-      }`,
+      active.configLine,
+      filtersLine(active.settings),
       countersLine(counters),
     ];
     if (verify && active.hookId !== null) {
@@ -646,12 +670,12 @@ export class Tracking {
     }
   }
 
-  async #sweep(repo: string): Promise<SweepResult | null> {
-    if (!this.#deps.config.sweepEnabled) return null;
+  async #sweep(repo: string, settings: EffectiveSettings): Promise<SweepResult | null> {
+    if (!settings.cache.sweepOnTrack) return null;
     try {
       return await (this.#deps.sweep ?? realSweep)(this.#deps.gh, {
         onlyRepo: repo,
-        cacheDir: this.#deps.config.cacheDir,
+        cacheDir: settings.cache.dir,
         logger: this.#log,
       });
     } catch {
@@ -660,16 +684,15 @@ export class Tracking {
     }
   }
 
-  #startedText(active: ActiveTracking, sweepResult: SweepResult | null, requiredChecks: readonly string[]): string {
+  #startedText(active: ActiveTracking, sweepResult: SweepResult | null): string {
     const lines = [
       `Tracking ${prKey(active.prRef)} — ${active.pr.url}`,
       `head: ${active.head.headSha ?? 'unknown'} (source: ${active.head.headSource ?? 'none'})`,
       `state: ${active.pr.isDraft ? 'draft' : 'open'} (${active.pr.headRefName} into ${active.pr.baseRefName})`,
       `hook: ${active.hookId ?? 'unconfirmed'}`,
       `listener: 127.0.0.1:${active.listener.port}`,
-      `filters: ci_events=${active.ciEvents}, required_checks=[${requiredChecks.join(', ')}], comment_authors=${
-        active.commentAuthors === null ? 'anyone' : [...active.commentAuthors].join(', ')
-      }`,
+      active.configLine,
+      filtersLine(active.settings),
       'Events before this moment were not captured and will not be replayed.',
     ];
     if (sweepResult !== null && sweepResult.failures.length > 0) {
@@ -681,19 +704,23 @@ export class Tracking {
   }
 }
 
-function resolveCommentAuthors(
-  fromInput: readonly string[] | undefined,
-  fromConfig: ReadonlySet<string> | null,
-  login: string | null,
-): ReadonlySet<string> | null {
-  if (fromInput !== undefined) {
-    const logins = fromInput.map((name) => name.trim().toLowerCase()).filter((name) => name.length > 0);
-    return logins.length > 0 ? new Set(logins) : null;
-  }
-  if (fromConfig !== null) return fromConfig;
-  // Acting on a comment means pushing code, so the default trusts only the account this
-  // machine is authenticated as.
-  return login === null || login === '' ? null : new Set([login.toLowerCase()]);
+function configLine(load: Extract<ConfigLoad, { ok: true }>): string {
+  const source = load.source === 'file' ? 'file' : 'defaults, no file';
+  return `config: ${load.path} (${source}); schema: ${schemaPath(PLUGIN_ROOT)}`;
+}
+
+// Each setting is reported with where its value came from, so "I changed the file and
+// nothing happened" is answerable from the track output alone.
+function filtersLine(settings: EffectiveSettings): string {
+  const authors = settings.commentAuthors === null ? 'anyone' : [...settings.commentAuthors].join(', ');
+  const authorsOrigin =
+    settings.origins.commentAuthors === 'default' ? 'default: gh login' : settings.origins.commentAuthors;
+  return [
+    `filters: ci_events=${settings.policy.checks.wake} (${settings.origins.ciEvents})`,
+    `required_checks=[${settings.requiredChecks.join(', ')}] (${settings.origins.requiredChecks})`,
+    `comment_authors=${authors} (${authorsOrigin})`,
+    `bot_comments=${settings.botComments} (${settings.origins.botComments})`,
+  ].join(', ');
 }
 
 function forwarderLine(forwarder: Forwarder): string {

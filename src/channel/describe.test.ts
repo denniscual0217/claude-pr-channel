@@ -4,7 +4,7 @@ import type { EnvelopeOf, PrRef } from '../types.js';
 import { untrusted } from '../types.js';
 import { describeEvent } from './describe.js';
 
-const pr: PrRef = { repo: 'toptal/example', prNumber: 42 };
+const pr: PrRef = { repo: 'acme-labs/example', prNumber: 42 };
 const head = 'a'.repeat(40);
 const otherHead = 'b'.repeat(40);
 
@@ -43,14 +43,14 @@ function allGreen(headSha: string, stale = false): EnvelopeOf<'ci_all_required_g
   };
 }
 
-function temploy(headSha: string, stale = false): EnvelopeOf<'temploy_workflow'> {
+function deploy(headSha: string, stale = false): EnvelopeOf<'deploy_workflow'> {
   return {
     ...base(stale, headSha),
-    kind: 'temploy_workflow',
+    kind: 'deploy_workflow',
     payload: {
-      kind: 'temploy_workflow', prRef: pr, headSha, actorLogin: null,
+      kind: 'deploy_workflow', prRef: pr, headSha, actorLogin: null,
       occurredAtIso: '2026-09-09T10:00:00.000Z', htmlUrl: null,
-      workflowRunId: 3, runAttempt: 1, state: { status: 'completed', conclusion: 'success' },
+      workflowName: 'Build Preview Image', workflowRunId: 3, runAttempt: 1, state: { status: 'completed', conclusion: 'success' },
     },
   };
 }
@@ -64,6 +64,7 @@ function lifecycle(headSha: string, stale = false): EnvelopeOf<'pr_lifecycle'> {
       occurredAtIso: '2026-09-09T10:00:00.000Z', htmlUrl: null,
       action: 'synchronize', draft: false, baseRef: 'main', headRef: 'feature',
       untrustedTitle: untrusted('title'),
+      untrustedSubject: null,
     },
   };
 }
@@ -95,12 +96,12 @@ describe('describeEvent', () => {
   });
 
   it('suppresses every positive signal for a head that is not current', () => {
-    for (const envelope of [check(otherHead, 'success'), allGreen(otherHead), temploy(otherHead)]) {
+    for (const envelope of [check(otherHead, 'success'), allGreen(otherHead), deploy(otherHead)]) {
       expect(describeEvent(envelope, head)).toMatchObject({ positiveSignalSuppressed: true });
     }
     // A failure is news whatever head it is about, and a comment is not a signal at all.
     expect(describeEvent(check(otherHead, 'failure'), head)).toMatchObject({ positiveSignalSuppressed: false });
-    for (const envelope of [check(head, 'success'), allGreen(head), temploy(head)]) {
+    for (const envelope of [check(head, 'success'), allGreen(head), deploy(head)]) {
       expect(describeEvent(envelope, head)).toMatchObject({ positiveSignalSuppressed: false });
     }
   });

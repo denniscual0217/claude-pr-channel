@@ -2,7 +2,7 @@
 name: track
 description: Subscribe this Claude Code session to a GitHub pull request so its events (comments, reviews, CI results, lifecycle changes) are delivered here and acted on without being asked. Triggers on "subscribe this session to PR", "connect me to PR", "watch PR", "listen to this PR", "/pr-channel:track", or asking to stop doing so. Use only when the user wants THIS session bound to a PR, not for general PR questions.
 allowed-tools: Bash, Read
-version: 3.0.0
+version: 4.0.0
 ---
 
 # PR Channel — track
@@ -40,6 +40,13 @@ time: both will see the same events and both will act, so say so if that is a ri
      403 there means the token is not an admin on that repository.
    - `hook_unresolved` — tracking was torn down. If the message names candidate hook
      ids, pass them on so the user can delete them by hand.
+   - `invalid_argument` — one of `ci_events`, `required_checks`, `comment_authors`,
+     `bot_comments` or `replace` was not an allowed value. The message names the argument,
+     what it got and what was expected; the values are lowercase. Fix the call or drop the
+     argument — nothing was started, so nothing needs undoing.
+   - `config_invalid` — the config file could not be used, or a `PR_CHANNEL_*` variable
+     the plugin no longer reads is still set. The message lists every problem, one per
+     line, with the key that replaces each variable. Report it and stop.
 
 5. On success, report the repo, PR, head sha, hook id and the filters in effect, and
    state plainly that events from before this moment are not replayed — anything that
@@ -81,8 +88,9 @@ passing-check noise and other people's comments are filtered upstream.
   included: their findings are weighed like anyone else's.
 - **Failing check** — read the log, fix the cause, verify locally, commit, push.
 - **All required checks green** — carry on; mark a finished draft ready.
-- **Temploy image built** — the go-ahead for work needing that image. Do not comment on
-  the build. A failed Temploy build never reaches you; it is not yours to chase.
+- **Deploy workflow succeeded** — only if the operator configured one; it is the go-ahead
+  for work needing that build. Do not comment on it. A failed run never reaches you; it is
+  not yours to chase.
 
 ## Replying
 

@@ -1,12 +1,12 @@
-import type { CheckState, EventEnvelope, PrRef, TemployWorkflowState, UntrustedGithubText } from '../types.js';
+import type { CheckState, EventEnvelope, PrRef, UntrustedGithubText, WorkflowRunState } from '../types.js';
 
 const NEEDS_ATTENTION = new Set(['failure', 'timed_out', 'action_required', 'startup_failure']);
 
-function needsAttention(state: CheckState | TemployWorkflowState): boolean {
+function needsAttention(state: CheckState | WorkflowRunState): boolean {
   return state.status === 'completed' && NEEDS_ATTENTION.has(state.conclusion);
 }
 
-function describeState(state: CheckState | TemployWorkflowState): string {
+function describeState(state: CheckState | WorkflowRunState): string {
   return state.status === 'completed' ? state.conclusion : state.status;
 }
 
@@ -156,21 +156,11 @@ function body(envelope: EventEnvelope): string[] {
         ]),
       ];
 
-    case 'temploy_workflow':
+    case 'deploy_workflow':
       return [
-        `Build Temploy Image on ${where} is ${describeState(event.state)} for head ${event.headSha} ` +
+        `Workflow "${event.workflowName}" on ${where} is ${describeState(event.state)} for head ${event.headSha} ` +
           `(run ${event.workflowRunId}, attempt ${event.runAttempt}).`,
-        event.state.status === 'completed' && event.state.conclusion === 'success'
-          ? [
-              'The image for this head is built and available.',
-              'If your work has a step that needs the Temploy image — verifying the change in',
-              'the deployed environment, for instance — this is the signal to do it now.',
-              'Otherwise carry on; no comment is expected for a build result.',
-            ].join('\n')
-          : [
-              'Do not chase this. A Temploy build failing is not this session\'s job, and it',
-              'does not mean the code in this PR is wrong. Carry on with what you were doing.',
-            ].join('\n'),
+        deployGuidance(event.state, event.workflowName),
       ];
 
     case 'pr_lifecycle':
@@ -178,9 +168,35 @@ function body(envelope: EventEnvelope): string[] {
         `${where} was ${event.action}${event.draft ? ' (draft)' : ''} ` +
           `(${event.headRef} into ${event.baseRef}).`,
         fence(envelope.id, 'PR title', event.untrustedTitle),
+        ...(event.untrustedSubject === null ? [] : [fence(envelope.id, `subject of the ${event.action} action`, event.untrustedSubject)]),
         'No reply is expected for a lifecycle change; carry on with your current step.',
       ];
   }
+}
+
+// Only a successful run passes the filter, so this normally renders the go-ahead. The
+// other two cases stay honest rather than calling every non-success state a failure: a
+// run that has not finished is not one that failed.
+function deployGuidance(state: WorkflowRunState, workflowName: string): string {
+  if (state.status !== 'completed') {
+    return [
+      `The "${workflowName}" run has not finished, so there is nothing to act on yet.`,
+      'Carry on with what you were doing.',
+    ].join('\n');
+  }
+  if (state.conclusion === 'success') {
+    return [
+      'Its run for this head succeeded, so what it produces is ready.',
+      'If your work has a step that needs that build — verifying the change in the',
+      'deployed environment, for instance — this is the signal to do it now.',
+      'Otherwise carry on; no comment is expected for a build result.',
+    ].join('\n');
+  }
+  return [
+    `Do not chase this. A failed "${workflowName}" run is not this session's`,
+    'job, and it does not mean the code in this PR is wrong. Carry on with what you',
+    'were doing.',
+  ].join('\n');
 }
 
 export function renderEventPrompt(envelope: EventEnvelope): string {

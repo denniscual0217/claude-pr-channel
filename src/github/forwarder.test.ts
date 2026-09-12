@@ -77,7 +77,7 @@ function fakeSpawn(behaviour: (child: FakeChild, attempt: number) => void = () =
 function build(fake: FakeSpawn, overrides: Record<string, unknown> = {}) {
   const waits: number[] = [];
   const forwarder = createForwarder({
-    repo: 'toptal/example',
+    repo: 'acme-labs/example',
     events: ['pull_request', 'check_run'],
     url: 'http://127.0.0.1:4321/webhook',
     secret: SECRET,
@@ -105,7 +105,7 @@ describe('the forwarder', () => {
       'webhook',
       'forward',
       '--events=pull_request,check_run',
-      '--repo=toptal/example',
+      '--repo=acme-labs/example',
       '--url=http://127.0.0.1:4321/webhook',
       `--secret=${SECRET}`,
     ]);

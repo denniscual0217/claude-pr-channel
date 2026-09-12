@@ -7,7 +7,8 @@ import { CONNECT_LINE, type ChildHandle, type SpawnForwarder } from '../src/gith
 import type { DeleteHookResult, GhClient, HookInfo, PrInfo } from '../src/github/gh.js';
 import { GhError } from '../src/github/gh.js';
 import { readMarkers } from '../src/github/markers.js';
-import type { Config } from '../src/config.js';
+import type { Config, ConfigLoad } from '../src/config.js';
+import { ConfigError, DEFAULT_CONFIG } from '../src/config.js';
 import type { LogLevel } from '../src/log.js';
 import { loadFixture, FIXTURE_REPO, fixtureEvent, type FixtureName } from './fixtures/index.js';
 import type { Listener, ListenerOptions } from '../src/webhook/listener.js';
@@ -16,14 +17,12 @@ const HEAD = '4d0f1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b';
 
 function config(overrides: Partial<Config> = {}): Config {
   return {
-    maxPayloadBytes: 1_048_576,
-    rateLimit: { maxDeliveries: 500, windowMs: 60_000 },
-    requiredChecks: ['ci/lint', 'ci/test'],
-    ciEvents: 'completed',
-    commentAuthors: null,
-    botComments: 'handle',
-    cacheDir: null,
-    sweepEnabled: true,
+    ...DEFAULT_CONFIG,
+    events: {
+      ...DEFAULT_CONFIG.events,
+      requiredChecks: { enabled: true, names: ['ci/lint', 'ci/test'] },
+    },
+    limits: { maxPayloadBytes: 1_048_576, rateLimit: { maxDeliveries: 500, windowMs: 60_000 } },
     ...overrides,
   };
 }
@@ -99,6 +98,8 @@ interface Harness {
   readonly janitorClosed: () => boolean;
   readonly order: string[];
   readonly cacheDir: string;
+  readonly configPath: string;
+  readonly sweeps: () => number;
   readonly ghChildren: FakeForwarderChild[];
   // GitHub's own ping for a hook, verified against this session's secret.
   ping(hookId: number): void;
@@ -120,6 +121,8 @@ afterEach(() => {
 interface HarnessOptions {
   gh?: FakeGhClient;
   config?: Partial<Config>;
+  loadConfig?: () => ConfigLoad;
+  sweepOnTrack?: boolean;
   connect?: boolean;
   pingsOnSpawn?: number[];
   // The id the first gh launch of this session creates; later launches take the next ones.
@@ -233,9 +236,18 @@ function harness(options: HarnessOptions = {}): Harness {
     };
   };
 
+  const configPath = join(cacheDir, 'config.json');
+  // The marker directory is always the temp one, whatever else a test overrides: a config
+  // that fell back to the real cache dir would write into the machine's own markers.
+  const inForce: Config = {
+    ...config(options.config),
+    cache: { dir: cacheDir, sweepOnTrack: options.sweepOnTrack ?? true },
+  };
+  let sweeps = 0;
+
   const deps: TrackingDeps = {
     gh,
-    config: config(options.config),
+    loadConfig: options.loadConfig ?? (() => ({ ok: true, config: inForce, path: configPath, source: 'file' })),
     notifier: {
       notification: async (notification) => {
         notifications.push({
@@ -249,7 +261,10 @@ function harness(options: HarnessOptions = {}): Harness {
     spawnForwarder,
     spawnJanitor,
     createListener,
-    sweep: async () => ({ deletedHooks: [], killedGh: [], removedMarkers: 0, skippedLive: 0, failures: [] }),
+    sweep: async () => {
+      sweeps += 1;
+      return { deletedHooks: [], killedGh: [], removedMarkers: 0, skippedLive: 0, failures: [] };
+    },
     logger: (level, event, fields = {}) => logs.push({ level, event, fields }),
     wait: async () => {},
     processStart: () => 'Mon Sep  7 10:00:00 2026',
@@ -258,7 +273,7 @@ function harness(options: HarnessOptions = {}): Harness {
     hookPollMs: 1,
   };
 
-  const tracking = new Tracking({ ...deps, config: config({ cacheDir, ...options.config }) });
+  const tracking = new Tracking(deps);
 
   return {
     tracking,
@@ -269,6 +284,8 @@ function harness(options: HarnessOptions = {}): Harness {
     janitorClosed: () => !janitorOpen,
     order,
     cacheDir,
+    configPath,
+    sweeps: () => sweeps,
     ghChildren,
     ping: (hookId) => onPing?.({ hook_id: hookId }, Buffer.from('')),
     deliver: async (name, deliveryId = `d-${Math.random()}`) => {
@@ -474,8 +491,14 @@ describe('untrack', () => {
 });
 
 describe('status', () => {
-  it('reports nothing before tracking starts', async () => {
-    expect(await harness().tracking.status()).toBe('tracking: no');
+  it('reports nothing before tracking starts, and where the config came from', async () => {
+    const h = harness();
+
+    const text = await h.tracking.status();
+
+    expect(text.split('\n')[0]).toBe('tracking: no');
+    expect(text).toContain(`config: ${h.configPath} (file)`);
+    expect(text).toContain('schema/config.schema.json');
   });
 
   // The dead-forwarder-reported-healthy bug: the forwarder field comes from the live gh
@@ -648,7 +671,7 @@ describe('another session on the same repository', () => {
 
     const text = await h.tracking.untrack();
 
-    expect(await h.tracking.status()).toBe('tracking: no');
+    expect((await h.tracking.status()).split('\n')[0]).toBe('tracking: no');
     expect(gh.calls).not.toContain('deleteHook 555');
     expect(gh.calls).not.toContain('deleteHook 101');
     expect(gh.hooks.map((hook) => hook.id)).toEqual([7, 100, 101, 555]);
@@ -826,3 +849,89 @@ async function waitFor(condition: () => boolean, timeoutMs = 5_000): Promise<voi
   }
   throw new Error('condition never became true');
 }
+
+describe('a track argument that is not one of the allowed values', () => {
+  // The argument outranks the config file, so an unchecked one is the widest hole of the
+  // three layers: "Ignore" matches neither branch of the bot filter and would be read as
+  // "handle", widening the trust boundary in the direction the operator asked to close it.
+  it('is refused by name, and nothing is started on the strength of it', async () => {
+    const h = harness();
+
+    await expect(h.tracking.track({ pr: '42', repo: FIXTURE_REPO, bot_comments: 'Ignore' })).rejects.toMatchObject({
+      code: 'invalid_argument',
+      message: 'bot_comments: "Ignore" is not allowed; expected one of "handle", "ignore"',
+    });
+
+    expect(h.tracking.state).toBe('idle');
+    expect(h.order).toEqual([]);
+    expect(h.gh.calls).toEqual([]);
+    expect(readMarkers(h.cacheDir)).toEqual([]);
+  });
+
+  it('is refused whatever the shape of the mistake', async () => {
+    const h = harness();
+
+    await expect(h.tracking.track({ ci_events: 'Completed' })).rejects.toMatchObject({ code: 'invalid_argument' });
+    await expect(h.tracking.track({ required_checks: 'ci/lint' })).rejects.toMatchObject({ code: 'invalid_argument' });
+    await expect(h.tracking.track({ replace: 'yes' })).rejects.toMatchObject({ code: 'invalid_argument' });
+    await expect(h.tracking.track({ ci_event: 'all' })).rejects.toMatchObject({ code: 'invalid_argument' });
+    expect(h.order).toEqual([]);
+  });
+
+  it('leaves a session that is already tracking exactly as it was', async () => {
+    const h = harness();
+    await h.tracking.track({ pr: '42', repo: FIXTURE_REPO });
+
+    await expect(h.tracking.track({ pr: '43', replace: true, bot_comments: 'Ignore' })).rejects.toMatchObject({
+      code: 'invalid_argument',
+    });
+
+    expect(h.tracking.state).toBe('tracking');
+    expect(h.tracking.trackedPr).toMatchObject({ prNumber: 42 });
+    expect(await h.tracking.status()).toContain('bot_comments=handle');
+  });
+});
+
+describe('the config file', () => {
+  it('refuses to track at all while it cannot be used, and spawns nothing', async () => {
+    const h = harness({
+      loadConfig: () => ({
+        ok: false,
+        path: '/cfg/config.json',
+        error: new ConfigError('events.checks.wake: "sometimes" is not allowed; expected one of "failures", "completed", "all"'),
+      }),
+    });
+
+    await expect(h.tracking.track({ pr: '42', repo: FIXTURE_REPO })).rejects.toMatchObject({
+      code: 'config_invalid',
+      message: expect.stringContaining('events.checks.wake'),
+    });
+
+    expect(h.tracking.state).toBe('idle');
+    expect(h.order).toEqual([]);
+    expect(readMarkers(h.cacheDir)).toEqual([]);
+  });
+
+  it('reports where its values came from, so a file that changed nothing is visible', async () => {
+    const h = harness();
+
+    const text = await h.tracking.track({ pr: '42', repo: FIXTURE_REPO, ci_events: 'all' });
+
+    expect(text).toContain(`config: ${h.configPath} (file)`);
+    expect(text).toContain('ci_events=all (argument)');
+    expect(text).toContain('required_checks=[ci/lint, ci/test] (config)');
+    expect(text).toContain('comment_authors=octo-worker (default: gh login)');
+    expect(text).toContain('bot_comments=handle (default)');
+    expect(await h.tracking.status()).toContain('ci_events=all (argument)');
+  });
+
+  it('skips the startup sweep when the config turns it off', async () => {
+    const swept = harness();
+    await swept.tracking.track({ pr: '42', repo: FIXTURE_REPO });
+    expect(swept.sweeps()).toBe(1);
+
+    const unswept = harness({ sweepOnTrack: false });
+    await unswept.tracking.track({ pr: '42', repo: FIXTURE_REPO });
+    expect(unswept.sweeps()).toBe(0);
+  });
+});

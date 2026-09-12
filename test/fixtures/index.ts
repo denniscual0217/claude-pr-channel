@@ -13,6 +13,7 @@ export const FIXTURE_PR: PrRef = { repo: FIXTURE_REPO, prNumber: 42 };
 export const FIXTURE_HEAD_SHA = '4d0f1a2b3c4d5e6f70819a2b3c4d5e6f70819a2b';
 export const FIXTURE_NEXT_HEAD_SHA = 'c3a91e5bd27f04186a5c9be31d70f4a2c8e6b510';
 export const FIXTURE_REQUIRED_CHECKS = ['ci/lint', 'ci/test'] as const;
+export const FIXTURE_DEPLOY_WORKFLOW = 'Build Preview Image';
 
 export const FIXTURES = {
   prComment: { file: 'issue_comment.created.json', event: 'issue_comment' },
@@ -21,7 +22,7 @@ export const FIXTURES = {
   checkLintGreen: { file: 'check_run.completed.lint.json', event: 'check_run' },
   checkTestGreen: { file: 'check_run.completed.test.json', event: 'check_run' },
   checkTestFailed: { file: 'check_run.completed.test-failed.json', event: 'check_run' },
-  temployWorkflow: { file: 'workflow_run.completed.temploy.json', event: 'workflow_run' },
+  deployWorkflow: { file: 'workflow_run.completed.deploy.json', event: 'workflow_run' },
   prSynchronize: { file: 'pull_request.synchronize.json', event: 'pull_request' },
   prMerged: { file: 'pull_request.closed.merged.json', event: 'pull_request' },
 } as const satisfies Record<string, { file: string; event: GithubEventName }>;
