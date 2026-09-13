@@ -63,13 +63,6 @@ function check(state: object): EnvelopeOf<'ci_check'> {
   });
 }
 
-function allGreen(): EnvelopeOf<'ci_all_required_green'> {
-  return envelopeOf('ci_all_required_green', {
-    headSha: 'a'.repeat(40), actorLogin: null,
-    occurredAtIso: '2026-09-09T10:00:00.000Z', htmlUrl: null, checkNames: ['ci/lint'],
-  });
-}
-
 function deploy(conclusion: string): EnvelopeOf<'workflow'> {
   return envelopeOf('workflow', {
     headSha: 'a'.repeat(40), actorLogin: null,
@@ -158,16 +151,23 @@ describe('worthWaking', () => {
     expect(worthWaking(deploy('failure'), { ...off, checks: { enabled: true, wake: 'all' } })).toBe(false);
   });
 
+  // Each kind states its own "on" policy: checks are off by default now, so a shared
+  // baseline would fail the control case rather than the assertion under test.
   it('suppresses each kind that is turned off, and nothing else', () => {
+    const checksOn = policy({ checks: { enabled: true, wake: 'completed' } });
     const cases = [
-      { envelope: comment('please fix'), off: policy({ comments: false }) },
-      { envelope: review(), off: policy({ reviews: false }) },
-      { envelope: reviewComment(), off: policy({ reviewComments: false }) },
-      { envelope: check({ status: 'completed', conclusion: 'failure' }), off: policy({ checks: { enabled: false, wake: 'completed' } }) },
-      { envelope: allGreen(), off: policy({ requiredChecks: { enabled: false } }) },
+      { envelope: comment('please fix'), on: DEFAULT_POLICY, off: policy({ comments: false }) },
+      { envelope: review(), on: DEFAULT_POLICY, off: policy({ reviews: false }) },
+      { envelope: reviewComment(), on: DEFAULT_POLICY, off: policy({ reviewComments: false }) },
+      {
+        envelope: check({ status: 'completed', conclusion: 'failure' }),
+        on: checksOn,
+        off: policy({ checks: { enabled: false, wake: 'completed' } }),
+      },
+      { envelope: deploy('success'), on: watching('success'), off: policy({ workflows: new Map() }) },
     ] as const;
-    for (const { envelope, off } of cases) {
-      expect(worthWaking(envelope, watching('success'))).toBe(true);
+    for (const { envelope, on, off } of cases) {
+      expect(worthWaking(envelope, on)).toBe(true);
       expect(worthWaking(envelope, off)).toBe(false);
     }
   });

@@ -146,16 +146,6 @@ function body(envelope: EventEnvelope): string[] {
           : 'No action needed unless it blocks your current step.',
       ];
 
-    case 'ci_all_required_green':
-      return [
-        `All required checks are green on ${where} for head ${event.headSha} ` +
-          `(${event.checkNames.join(', ')}).`,
-        respond([
-          'Continue with the next step for this PR.',
-          `If the PR is a draft and the work is complete, mark it ready: gh pr ready ${prNumber} --repo ${repo}`,
-        ]),
-      ];
-
     case 'workflow':
       return [
         `Workflow "${event.workflowName}" on ${where} is ${describeState(event.state)} for head ${event.headSha} ` +

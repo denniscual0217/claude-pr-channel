@@ -52,7 +52,7 @@ Behind those, the channel server exposes three tools:
 | `untrack` | Stop the listener and the forwarder, delete the webhook, and report the counters. |
 | `status` | Report the PR, head sha, hook id, the **live** forwarder state, the listener port and the delivery counters. `verify: true` also asks GitHub whether the hook still exists. |
 
-`track` accepts `pr`, `repo`, `ci_events`, `required_checks`, `comment_authors`,
+`track` accepts `pr`, `repo`, `ci_events`, `comment_authors`,
 `bot_comments` and `replace`. The four filters override the matching keys in the
 [config file](#configuration) for that one PR.
 
@@ -65,7 +65,6 @@ Only what a session can act on. Everything else is counted and dropped.
 | PR comment, review, inline review comment | Yes, unless the author is outside `comment_authors` (default: the `gh` login) or the body starts with `**Claude:**` |
 | Review with no body | No — it is the envelope around inline comments that arrive on their own |
 | CI check | `completed` (default) every finished check; `failures` only the ones that finished badly; `all` every transition |
-| All required checks green | Derived from `required_checks`, announced once per head |
 | A watched workflow (`events.workflows`, none by default) | Whatever that entry's `wake` says: `success` (default) only a green run, `failures` only one that finished badly, `completed` either, `all` every transition |
 | PR lifecycle (opened, synchronize, draft, ready, reopened, closed, merged) | Yes; `closed`/`merged` is delivered and then stops tracking |
 | Other pull_request actions (labeled, assigned, review_requested, edited, …) | Only once turned on under `events.lifecycle`; the label, assignee, reviewer or milestone it names is delivered as untrusted text |
@@ -223,7 +222,6 @@ These are the defaults in full:
     "reviews": { "enabled": true },
     "reviewComments": { "enabled": true },
     "checks": { "enabled": true, "wake": "completed" },
-    "requiredChecks": { "enabled": true, "names": [] },
     "workflows": [],
     "lifecycle": {
       "opened": true, "synchronize": true, "ready_for_review": true,
@@ -253,8 +251,8 @@ the only run worth hearing about.
 
 **Disabled means silent, not blind.** The switch is applied last, after normalization: a
 disabled `synchronize` still advances the head, so later events are still marked stale; a
-disabled `checks` still records check states, so all-required-green is still announced; a
-disabled `closed`/`merged` still ends tracking, the session is simply not told. Suppressed
+disabled `checks` still applies check states to the head; a disabled `closed`/`merged`
+still ends tracking, the session is simply not told. Suppressed
 events are counted in the `suppressed` counter.
 
 ### The schema
@@ -282,7 +280,6 @@ startup makes `track` refuse, naming the key that took over.
 | `PR_CHANNEL_COMMENT_AUTHORS` | `authors.mode` / `authors.allow` |
 | `PR_CHANNEL_BOT_COMMENTS` | `authors.bots` |
 | `PR_CHANNEL_CI_EVENTS` | `events.checks.wake` |
-| `PR_CHANNEL_REQUIRED_CHECKS` | `events.requiredChecks.names` |
 | `PR_CHANNEL_MAX_PAYLOAD_BYTES` | `limits.maxPayloadBytes` |
 | `PR_CHANNEL_RATE_LIMIT_MAX` / `_WINDOW_MS` | `limits.rateLimit.maxDeliveries` / `.windowMs` |
 | `PR_CHANNEL_CACHE_DIR` | `cache.dir` |

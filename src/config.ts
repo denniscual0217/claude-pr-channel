@@ -24,7 +24,6 @@ export interface Config {
     readonly reviews: { readonly enabled: boolean };
     readonly reviewComments: { readonly enabled: boolean };
     readonly checks: { readonly enabled: boolean; readonly wake: CiEvents };
-    readonly requiredChecks: { readonly enabled: boolean; readonly names: readonly string[] };
     readonly workflows: readonly { readonly name: string; readonly wake: WorkflowWake }[];
     readonly lifecycle: Readonly<Record<PrLifecycleAction, boolean>>;
   };
@@ -49,8 +48,7 @@ export const DEFAULT_CONFIG: Config = {
     comments: { enabled: true },
     reviews: { enabled: true },
     reviewComments: { enabled: true },
-    checks: { enabled: true, wake: 'completed' },
-    requiredChecks: { enabled: true, names: [] },
+    checks: { enabled: false, wake: 'completed' },
     workflows: [],
     lifecycle: {
       opened: true,
@@ -108,7 +106,6 @@ export const LEGACY_ENV: Readonly<Record<string, string>> = {
   PR_CHANNEL_COMMENT_AUTHORS: 'authors.mode / authors.allow',
   PR_CHANNEL_BOT_COMMENTS: 'authors.bots',
   PR_CHANNEL_CI_EVENTS: 'events.checks.wake',
-  PR_CHANNEL_REQUIRED_CHECKS: 'events.requiredChecks.names',
   PR_CHANNEL_MAX_PAYLOAD_BYTES: 'limits.maxPayloadBytes',
   PR_CHANNEL_RATE_LIMIT_MAX: 'limits.rateLimit.maxDeliveries',
   PR_CHANNEL_RATE_LIMIT_WINDOW_MS: 'limits.rateLimit.windowMs',
@@ -342,13 +339,11 @@ export interface EffectiveSettings {
   // null means every human author. A trust boundary, applied during normalization.
   readonly commentAuthors: ReadonlySet<string> | null;
   readonly botComments: BotComments;
-  readonly requiredChecks: readonly string[];
   readonly workflowNames: ReadonlySet<string>;
   readonly limits: Config['limits'];
   readonly cache: Config['cache'];
   readonly origins: {
     readonly ciEvents: SettingOrigin;
-    readonly requiredChecks: SettingOrigin;
     readonly commentAuthors: SettingOrigin;
     readonly botComments: SettingOrigin;
   };
@@ -377,9 +372,6 @@ export function parseTrackInput(raw: unknown): TrackInputParse {
 export function resolveTracking(config: Config, input: TrackInput, ghLogin: string | null): EffectiveSettings {
   const events = config.events;
   const wake: CiEvents = input.ci_events ?? events.checks.wake;
-  const requiredChecks = input.required_checks
-    ? [...new Set(input.required_checks.map((name) => name.trim()).filter((name) => name.length > 0))]
-    : events.requiredChecks.names;
   const botComments: BotComments = input.bot_comments ?? config.authors.bots;
 
   return {
@@ -388,19 +380,16 @@ export function resolveTracking(config: Config, input: TrackInput, ghLogin: stri
       reviews: events.reviews.enabled,
       reviewComments: events.reviewComments.enabled,
       checks: { enabled: events.checks.enabled, wake },
-      requiredChecks: { enabled: events.requiredChecks.enabled },
       workflows: new Map(events.workflows.map((entry) => [entry.name, entry.wake])),
       lifecycle: events.lifecycle,
     },
     commentAuthors: resolveCommentAuthors(config, input.comment_authors, ghLogin),
     botComments,
-    requiredChecks,
     workflowNames: new Set(events.workflows.map((entry) => entry.name)),
     limits: config.limits,
     cache: config.cache,
     origins: {
       ciEvents: origin(input.ci_events !== undefined, wake === DEFAULT_CONFIG.events.checks.wake),
-      requiredChecks: origin(input.required_checks !== undefined, requiredChecks.length === 0),
       commentAuthors: origin(input.comment_authors !== undefined, config.authors.mode === DEFAULT_CONFIG.authors.mode),
       botComments: origin(input.bot_comments !== undefined, botComments === DEFAULT_CONFIG.authors.bots),
     },

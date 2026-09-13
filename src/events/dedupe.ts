@@ -95,9 +95,6 @@ export function logicalFingerprint(event: PrEvent): string {
     case 'ci_check':
       parts.push(event.headSha, event.checkName, event.checkRunId, stateTag(event.state));
       break;
-    case 'ci_all_required_green':
-      parts.push(event.headSha, [...event.checkNames].sort().join(','));
-      break;
     case 'workflow':
       parts.push(event.headSha, event.workflowRunId, event.runAttempt, stateTag(event.state));
       break;

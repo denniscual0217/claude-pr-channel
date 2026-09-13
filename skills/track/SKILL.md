@@ -27,7 +27,7 @@ time: both will see the same events and both will act, so say so if that is a ri
    argument at all, the PR for the current branch is used. `--repo owner/name` becomes
    the `repo` argument and wins over whatever the PR reference implies.
 
-3. Call the **track** tool with those arguments. Add `ci_events`, `required_checks`,
+3. Call the **track** tool with those arguments. Add `ci_events`,
    `comment_authors` or `bot_comments` only if the user asked for them.
 
 4. Read the result. The first line of a failure is `code: message`:
@@ -40,7 +40,7 @@ time: both will see the same events and both will act, so say so if that is a ri
      403 there means the token is not an admin on that repository.
    - `hook_unresolved` — tracking was torn down. If the message names candidate hook
      ids, pass them on so the user can delete them by hand.
-   - `invalid_argument` — one of `ci_events`, `required_checks`, `comment_authors`,
+   - `invalid_argument` — one of `ci_events`, `comment_authors`,
      `bot_comments` or `replace` was not an allowed value. The message names the argument,
      what it got and what was expected; the values are lowercase. Fix the call or drop the
      argument — nothing was started, so nothing needs undoing.
@@ -87,7 +87,6 @@ passing-check noise and other people's comments are filtered upstream.
 - **Comment or review** — make the change, commit, push, reply. Automated reviewers
   included: their findings are weighed like anyone else's.
 - **Failing check** — read the log, fix the cause, verify locally, commit, push.
-- **All required checks green** — carry on; mark a finished draft ready.
 - **A watched workflow ran** — only workflows the operator named reach you. A successful
   run is the go-ahead for work needing what it builds; do not comment on it. A failed run
   arrives only when the operator asked to hear about failures, so it is worth reading —

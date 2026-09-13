@@ -4,7 +4,6 @@ import type { HeadTracker } from '../events/head.js';
 import { newEventId } from '../events/ids.js';
 import type { BotComments } from '../events/normalize.js';
 import { normalizeWebhookAll } from '../events/normalize.js';
-import type { RequiredChecksTracker } from '../events/required-checks.js';
 import type { Logger } from '../log.js';
 import { noopLogger } from '../log.js';
 import type { EventEnvelope, PrEvent, PrRef, TerminalLifecycleAction } from '../types.js';
@@ -29,7 +28,6 @@ export interface PipelineOptions {
   readonly prRef: PrRef;
   readonly head: HeadTracker;
   readonly deduper: DeliveryDeduper;
-  readonly requiredChecks: RequiredChecksTracker;
   readonly notifier: ChannelNotifier;
   readonly policy: DeliveryPolicy;
   readonly commentAuthors: ReadonlySet<string> | null;
@@ -121,15 +119,8 @@ export function createPipeline(options: PipelineOptions): Pipeline {
 
     await push(envelopeFor(event, deliveryId, receivedAtIso, classification.stale), currentHead);
 
-    const derived = options.requiredChecks.observe(event, currentHead);
-    if (derived !== null) {
-      const derivedStale = options.head.classify(derived).stale;
-      await push(envelopeFor(derived, deliveryId, receivedAtIso, derivedStale), currentHead);
-    }
-
     if (event.kind === 'pr_lifecycle' && isTerminalLifecycleAction(event.action)) {
       ended = true;
-      options.requiredChecks.forget();
       options.onTerminal?.(event.action);
     }
   }

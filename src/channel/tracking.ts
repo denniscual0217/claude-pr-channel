@@ -5,7 +5,6 @@ import { DeliveryDeduper } from '../events/dedupe.js';
 import { HeadTracker } from '../events/head.js';
 import type { BotComments } from '../events/normalize.js';
 import { normalizeRepo, parsePrRef } from '../events/repo.js';
-import { RequiredChecksTracker } from '../events/required-checks.js';
 import type { GhClient, PrInfo } from '../github/gh.js';
 import { GhError } from '../github/gh.js';
 import type { Forwarder, SpawnForwarder } from '../github/forwarder.js';
@@ -52,7 +51,6 @@ export interface TrackInput {
   readonly pr?: string | undefined;
   readonly repo?: string | undefined;
   readonly ci_events?: CiEvents | undefined;
-  readonly required_checks?: readonly string[] | undefined;
   readonly comment_authors?: readonly string[] | undefined;
   readonly bot_comments?: BotComments | undefined;
   readonly replace?: boolean | undefined;
@@ -91,7 +89,6 @@ interface ActiveTracking {
   readonly janitor: JanitorHandle;
   readonly marker: MarkerHandle;
   readonly pipeline: Pipeline;
-  readonly requiredChecks: RequiredChecksTracker;
   readonly settings: EffectiveSettings;
   readonly configLine: string;
   readonly startedAtIso: string;
@@ -200,7 +197,6 @@ export class Tracking {
     head.seed(pr.headRefOid, this.#now().toISOString());
 
     const secret = generateWebhookSecret();
-    const checks = new RequiredChecksTracker(settings.requiredChecks);
     const deduper = new DeliveryDeduper();
 
     this.#pingedHookIds = new Set();
@@ -298,7 +294,6 @@ export class Tracking {
       prRef,
       head,
       deduper,
-      requiredChecks: checks,
       notifier: this.#deps.notifier,
       policy: settings.policy,
       commentAuthors: settings.commentAuthors,
@@ -323,7 +318,6 @@ export class Tracking {
       janitor,
       marker,
       pipeline,
-      requiredChecks: checks,
       settings,
       configLine: configLine(load),
       startedAtIso: this.#now().toISOString(),
@@ -527,7 +521,6 @@ export class Tracking {
     }
     active.janitor.closeStdin();
     active.secret = null;
-    active.requiredChecks.forget();
     this.#log('info', 'tracking_stopped', { pr: prKey(active.prRef), hook_deleted: hookDeleted });
     return { hookDeleted, deleted, leftBehind };
   }
@@ -717,7 +710,6 @@ function filtersLine(settings: EffectiveSettings): string {
     settings.origins.commentAuthors === 'default' ? 'default: gh login' : settings.origins.commentAuthors;
   return [
     `filters: ci_events=${settings.policy.checks.wake} (${settings.origins.ciEvents})`,
-    `required_checks=[${settings.requiredChecks.join(', ')}] (${settings.origins.requiredChecks})`,
     `comment_authors=${authors} (${authorsOrigin})`,
     `bot_comments=${settings.botComments} (${settings.origins.botComments})`,
     `workflows=[${[...settings.policy.workflows].map(([name, wake]) => `${name}:${wake}`).join(', ')}] (file)`,

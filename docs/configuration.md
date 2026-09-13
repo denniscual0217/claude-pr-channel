@@ -57,25 +57,11 @@ handled by default, because their findings are real review feedback.
 { "authors": { "bots": "ignore" } }
 ```
 
-**Only wake on CI failures.** The default delivers every finished check, which on a
-repo with twenty checks is twenty interruptions per push.
-
-```json
-{ "events": { "checks": { "wake": "failures" } } }
-```
-
-**Announce when the required checks are all green.** GitHub never says which checks a
-branch rule requires, so name them. Announced once per head; an empty list means
-never.
-
-```json
-{ "events": { "requiredChecks": { "names": ["ci/lint", "ci/test"] } } }
-```
-
-**Watch a GitHub Actions workflow.** None are watched by default. Nothing here is
-deploy-specific — a workflow is matched by name alone, so this fits an image build, a
-docs publish or a nightly benchmark equally. The name must match the workflow's `name:`
-exactly, case included, and each entry decides for itself what is worth waking for.
+**Track CI.** Name the workflows you care about. None are watched by default, and
+nothing here is deploy-specific — a workflow is matched by name alone, so this fits a
+lint run, an image build or a nightly benchmark equally. The name must match the
+workflow's `name:` exactly, case included, and each entry decides for itself what is
+worth waking for.
 
 ```json
 {
@@ -91,6 +77,24 @@ exactly, case included, and each entry decides for itself what is worth waking f
 `wake` is `success` (the default — only a run that finished green, the right answer for
 a build whose failure is not this PR's problem), `failures`, `completed` or `all`. An
 empty list watches nothing, so there is no separate on/off switch to contradict it.
+
+Use the workflow's name, not the job's. In a repository where `.github/workflows/lint.yml`
+opens with `name: Lint` and its job is called `Check:Lint`, the entry is `Lint`. A
+workflow whose jobs are a matrix is still one entry: the run finishes once however many
+shards it fans out to, which is the point — naming shards means editing this file every
+time the shard count changes.
+
+**Track CI that is not GitHub Actions.** CircleCI, Buildkite and apps that post their own
+result emit no workflow to name, so they are invisible to the list above. `checks` covers
+them, at the cost of being all of them or none — there is no way to name one:
+
+```json
+{ "events": { "checks": { "enabled": true, "wake": "failures" } } }
+```
+
+It is off by default because on a repository with twenty checks it is twenty
+interruptions per push, and because every GitHub Actions job also reports as a check —
+so turning it on alongside a workflow list wakes the session twice for one failure.
 
 **Track labels, or any other lifecycle action.** All 22 pull-request actions are
 individually switchable. Seven are on by default: opened, synchronize,

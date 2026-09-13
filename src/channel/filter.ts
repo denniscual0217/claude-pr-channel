@@ -3,7 +3,7 @@ import { isGreen } from '../types.js';
 
 // Which CI events are worth interrupting a session for.
 //   completed every finished check, successes included (default)
-//   failures  only checks that finished badly, plus the derived all-required-green
+//   failures  only checks that finished badly
 //   all       every transition, including queued and in_progress
 export type CiEvents = 'failures' | 'completed' | 'all';
 
@@ -18,7 +18,6 @@ export interface DeliveryPolicy {
   readonly reviews: boolean;
   readonly reviewComments: boolean;
   readonly checks: { readonly enabled: boolean; readonly wake: CiEvents };
-  readonly requiredChecks: { readonly enabled: boolean };
   readonly workflows: ReadonlyMap<string, WorkflowWake>;
   readonly lifecycle: Readonly<Record<PrLifecycleAction, boolean>>;
 }
@@ -30,8 +29,7 @@ export function finishedBadly(state: CheckState | WorkflowRunState): boolean {
 }
 
 // The last gate before a session is interrupted, and deliberately the last: everything
-// upstream — normalization, head tracking, the derived all-required-green, terminal
-// detection — has already run, so turning a kind off makes the session silent about it,
+// upstream — normalization, head tracking, terminal detection — has already run, so turning a kind off makes the session silent about it,
 // not blind to it. A push with twenty checks fires sixty transitions, and "ci/lint is
 // queued" is not worth a turn. Suppressed events are counted, they just do not interrupt.
 export function worthWaking(envelope: EventEnvelope, policy: DeliveryPolicy): boolean {
@@ -48,8 +46,6 @@ export function worthWaking(envelope: EventEnvelope, policy: DeliveryPolicy): bo
       if (policy.checks.wake === 'all') return true;
       if (policy.checks.wake === 'completed') return event.state.status === 'completed';
       return finishedBadly(event.state);
-    case 'ci_all_required_green':
-      return policy.requiredChecks.enabled;
     // Each watched workflow carries its own idea of what is worth a turn, because the
     // answer depends on the job: a green image build is a go-ahead, while a failing
     // benchmark is the only run worth hearing about. checks.wake is about CI checks and

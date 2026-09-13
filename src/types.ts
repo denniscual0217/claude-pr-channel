@@ -182,12 +182,6 @@ export interface CiCheckEvent extends PrEventBase {
   readonly detailsUrl: string | null;
 }
 
-export interface CiAllRequiredGreenEvent extends PrEventBase {
-  readonly kind: 'ci_all_required_green';
-  readonly headSha: string;
-  readonly checkNames: readonly string[];
-}
-
 export interface WorkflowEvent extends PrEventBase {
   readonly kind: 'workflow';
   readonly headSha: string;
@@ -216,7 +210,6 @@ export type PrEvent =
   | PrReviewEvent
   | PrReviewCommentEvent
   | CiCheckEvent
-  | CiAllRequiredGreenEvent
   | WorkflowEvent
   | PrLifecycleEvent;
 
@@ -225,7 +218,6 @@ export const PR_EVENT_KINDS = [
   'pr_review',
   'pr_review_comment',
   'ci_check',
-  'ci_all_required_green',
   'workflow',
   'pr_lifecycle',
 ] as const satisfies readonly PrEvent['kind'][];
@@ -235,8 +227,6 @@ export type PrEventKind = (typeof PR_EVENT_KINDS)[number];
 // green / ready signal for the route's current head.
 export function isPositiveHeadSignal(event: PrEvent): boolean {
   switch (event.kind) {
-    case 'ci_all_required_green':
-      return true;
     case 'ci_check':
     case 'workflow':
       return isGreen(event.state);

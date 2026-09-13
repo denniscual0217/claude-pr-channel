@@ -60,13 +60,13 @@
           "additionalProperties": false
         },
         "checks": {
-          "description": "CI checks: check_run, check_suite and legacy commit statuses.",
+          "description": "Every CI check, unnamed and ungrouped: check_run, check_suite and legacy commit statuses. Off by default.",
           "default": {},
           "type": "object",
           "properties": {
             "enabled": {
-              "default": true,
-              "description": "Deliver CI check results. Disabling stays silent, not blind: check states are still recorded, so all-required-green can still be announced.",
+              "default": false,
+              "description": "Deliver every CI check on the pull request. There is no way to name individual checks, so this is all of them or none, which is why it is off: on a repository with twenty checks it is twenty interruptions per push. Prefer events.workflows, which names what to watch. Turn this on for CI that is not GitHub Actions — CircleCI, Buildkite, or an app posting its own check — since those emit no workflow to name.",
               "type": "boolean"
             },
             "wake": {
@@ -78,27 +78,6 @@
                 "completed",
                 "all"
               ]
-            }
-          },
-          "additionalProperties": false
-        },
-        "requiredChecks": {
-          "description": "The derived \"all required checks are green\" event.",
-          "default": {},
-          "type": "object",
-          "properties": {
-            "enabled": {
-              "default": true,
-              "description": "Announce once per head that every required check is green.",
-              "type": "boolean"
-            },
-            "names": {
-              "default": [],
-              "description": "The check names that make up \"all required green\". GitHub payloads never say which checks a branch rule requires, so it is derived from this list; an empty list is never announced.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
             }
           },
           "additionalProperties": false

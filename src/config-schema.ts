@@ -48,9 +48,6 @@ export const CiEventsEnum = z.enum(['failures', 'completed', 'all']);
 export const BotCommentsEnum = z.enum(['handle', 'ignore']);
 export const WorkflowWakeEnum = z.enum(['success', 'failures', 'completed', 'all']);
 
-const uniqueTrimmed = (values: string[]): string[] =>
-  [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))];
-
 const uniqueLogins = (values: string[]): string[] =>
   [...new Set(values.map((value) => value.trim().toLowerCase()).filter((value) => value.length > 0))];
 
@@ -87,28 +84,14 @@ const eventsSchema = z
       .strictObject({
         enabled: z
           .boolean()
-          .default(true)
-          .meta({ description: 'Deliver CI check results. Disabling stays silent, not blind: check states are still recorded, so all-required-green can still be announced.' }),
+          .default(false)
+          .meta({ description: 'Deliver every CI check on the pull request. There is no way to name individual checks, so this is all of them or none, which is why it is off: on a repository with twenty checks it is twenty interruptions per push. Prefer events.workflows, which names what to watch. Turn this on for CI that is not GitHub Actions — CircleCI, Buildkite, or an app posting its own check — since those emit no workflow to name.' }),
         wake: CiEventsEnum
           .default('completed')
           .meta({ description: 'Which CI transitions are worth a turn of the session: "failures" only the ones that finished badly, "completed" every finished check, "all" every transition including queued and in progress. It decides CI checks only; events.workflows is unaffected.' }),
       })
       .prefault({})
-      .meta({ description: 'CI checks: check_run, check_suite and legacy commit statuses.' }),
-    requiredChecks: z
-      .strictObject({
-        enabled: z
-          .boolean()
-          .default(true)
-          .meta({ description: 'Announce once per head that every required check is green.' }),
-        names: z
-          .array(z.string())
-          .overwrite(uniqueTrimmed)
-          .default([])
-          .meta({ description: 'The check names that make up "all required green". GitHub payloads never say which checks a branch rule requires, so it is derived from this list; an empty list is never announced.' }),
-      })
-      .prefault({})
-      .meta({ description: 'The derived "all required checks are green" event.' }),
+      .meta({ description: 'Every CI check, unnamed and ungrouped: check_run, check_suite and legacy commit statuses. Off by default.' }),
     workflows: z
       .array(
         z.strictObject({
@@ -270,10 +253,6 @@ export const TrackInputSchema = z.strictObject({
   ci_events: CiEventsEnum
     .optional()
     .meta({ description: 'Which CI transitions wake the session, for this PR only. Overrides events.checks.wake in the config file.' }),
-  required_checks: z
-    .array(z.string())
-    .optional()
-    .meta({ description: 'Check names that make up "all required green", for this PR only. Overrides events.requiredChecks.names.' }),
   comment_authors: z
     .array(z.string())
     .optional()

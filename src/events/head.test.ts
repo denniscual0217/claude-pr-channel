@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import type { CiAllRequiredGreenEvent, CiCheckEvent, PrEvent, PrLifecycleAction, PrRef, WorkflowEvent } from '../types.js';
+import type { CiCheckEvent, PrEvent, PrLifecycleAction, PrRef, WorkflowEvent } from '../types.js';
 import { isPositiveHeadSignal, untrusted } from '../types.js';
 import { HeadTracker } from './head.js';
 
@@ -20,18 +20,6 @@ function ciGreen(headSha: string, checkName = 'test'): CiCheckEvent {
     checkRunId: 1,
     state: { status: 'completed', conclusion: 'success' },
     detailsUrl: null,
-  };
-}
-
-function allGreen(headSha: string): CiAllRequiredGreenEvent {
-  return {
-    kind: 'ci_all_required_green',
-    prRef: pr,
-    headSha,
-    actorLogin: null,
-    occurredAtIso: '2026-09-07T10:00:00.000Z',
-    htmlUrl: null,
-    checkNames: ['test'],
   };
 }
 
@@ -153,11 +141,11 @@ describe('the superseded-head invariant', () => {
 
     head.apply(lifecycle('synchronize', sha2));
 
-    for (const late of [ciGreen(sha1), allGreen(sha1), deployReady(sha1)]) {
+    for (const late of [ciGreen(sha1), deployReady(sha1)]) {
       expect(isPositiveHeadSignal(late)).toBe(true);
       expect(head.classify(late)).toMatchObject({ stale: true, suppressedPositiveSignal: true });
     }
-    for (const current of [ciGreen(sha2), allGreen(sha2), deployReady(sha2)]) {
+    for (const current of [ciGreen(sha2), deployReady(sha2)]) {
       expect(head.classify(current)).toMatchObject({ stale: false, suppressedPositiveSignal: false });
     }
   });
@@ -276,7 +264,7 @@ describe('head monotonicity', () => {
 describe('an unknown head', () => {
   it('suppresses positive signals, because no head can be vouched for', () => {
     const head = tracked(null);
-    for (const positive of [ciGreen(sha1), allGreen(sha1), deployReady(sha1)]) {
+    for (const positive of [ciGreen(sha1), deployReady(sha1)]) {
       expect(head.classify(positive)).toMatchObject({
         stale: false,
         headKnown: false,

@@ -106,7 +106,6 @@ describe('the schema the track tool advertises', () => {
 
   it('overrides the file settings with the same names the file uses', () => {
     expect(String(at('ci_events')['description'])).toContain('events.checks.wake');
-    expect(String(at('required_checks')['description'])).toContain('events.requiredChecks.names');
     expect(String(at('bot_comments')['description'])).toContain('authors.bots');
   });
 });

@@ -20,7 +20,6 @@ function config(overrides: Partial<Config> = {}): Config {
     ...DEFAULT_CONFIG,
     events: {
       ...DEFAULT_CONFIG.events,
-      requiredChecks: { enabled: true, names: ['ci/lint', 'ci/test'] },
     },
     limits: { maxPayloadBytes: 1_048_576, rateLimit: { maxDeliveries: 500, windowMs: 60_000 } },
     ...overrides,
@@ -872,7 +871,6 @@ describe('a track argument that is not one of the allowed values', () => {
     const h = harness();
 
     await expect(h.tracking.track({ ci_events: 'Completed' })).rejects.toMatchObject({ code: 'invalid_argument' });
-    await expect(h.tracking.track({ required_checks: 'ci/lint' })).rejects.toMatchObject({ code: 'invalid_argument' });
     await expect(h.tracking.track({ replace: 'yes' })).rejects.toMatchObject({ code: 'invalid_argument' });
     await expect(h.tracking.track({ ci_event: 'all' })).rejects.toMatchObject({ code: 'invalid_argument' });
     expect(h.order).toEqual([]);
@@ -919,7 +917,6 @@ describe('the config file', () => {
 
     expect(text).toContain(`config: ${h.configPath} (file)`);
     expect(text).toContain('ci_events=all (argument)');
-    expect(text).toContain('required_checks=[ci/lint, ci/test] (config)');
     expect(text).toContain('comment_authors=octo-worker (default: gh login)');
     expect(text).toContain('bot_comments=handle (default)');
     expect(await h.tracking.status()).toContain('ci_events=all (argument)');

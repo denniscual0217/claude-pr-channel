@@ -4,7 +4,6 @@ import { createPipeline, type Pipeline } from '../src/channel/pipeline.js';
 import { DEFAULT_CONFIG, resolveTracking } from '../src/config.js';
 import { DeliveryDeduper } from '../src/events/dedupe.js';
 import { HeadTracker } from '../src/events/head.js';
-import { RequiredChecksTracker } from '../src/events/required-checks.js';
 import type { LogLevel } from '../src/log.js';
 import { UNTRUSTED_TEXT_NOTICE } from '../src/types.js';
 import {
@@ -13,7 +12,6 @@ import {
   FIXTURE_NEXT_HEAD_SHA,
   FIXTURE_PR,
   FIXTURE_REPO,
-  FIXTURE_REQUIRED_CHECKS,
   fixtureEvent,
   loadFixture,
   setHeadSha,
@@ -74,7 +72,6 @@ function harness(options: HarnessOptions = {}): Harness {
     prRef: FIXTURE_PR,
     head,
     deduper: new DeliveryDeduper(),
-    requiredChecks: new RequiredChecksTracker(FIXTURE_REQUIRED_CHECKS),
     notifier: {
       notification: async (notification) => {
         if (failNext) throw new Error('transport closed');
@@ -282,7 +279,7 @@ describe('head tracking through the pipeline', () => {
     await h.deliver('checkTestGreen');
     // Green for the head that was current when those checks landed: delivery is
     // synchronous, so it was a true signal at the time it was pushed.
-    expect(h.pushed.at(-1)).toMatchObject({ kind: 'ci_all_required_green', headSha: FIXTURE_HEAD_SHA, stale: false });
+    expect(h.pushed.at(-1)).toMatchObject({ kind: 'ci_check', headSha: FIXTURE_HEAD_SHA, stale: false });
 
     await h.deliver('prSynchronize');
     expect(h.head.headSha).toBe(FIXTURE_NEXT_HEAD_SHA);
@@ -303,31 +300,7 @@ describe('head tracking through the pipeline', () => {
     }
   });
 
-  it('withholds all-required-green while a required check is failing', async () => {
-    const h = harness();
 
-    await h.deliver('checkLintGreen');
-    await h.deliver('checkTestFailed');
-    expect(h.kinds()).toEqual(['ci_check', 'ci_check']);
-
-    await h.deliver('checkTestGreen');
-    expect(h.kinds()).toEqual(['ci_check', 'ci_check', 'ci_check', 'ci_all_required_green']);
-    expect(h.pushed.at(-1)).toMatchObject({ headSha: FIXTURE_HEAD_SHA, stale: false, suppressed: false });
-  });
-
-  it('derives all-required-green again for a new head, once per head', async () => {
-    const h = harness();
-
-    await h.deliver('checkLintGreen');
-    await h.deliver('checkTestGreen');
-    await h.deliver('prSynchronize');
-    await h.deliver('checkLintGreen', { mutate: onNewHead });
-    await h.deliver('checkTestGreen', { mutate: onNewHead });
-
-    const greens = h.pushed.filter((event) => event.kind === 'ci_all_required_green');
-    expect(greens.map((event) => event.headSha)).toEqual([FIXTURE_HEAD_SHA, FIXTURE_NEXT_HEAD_SHA]);
-    expect(greens.at(-1)).toMatchObject({ stale: false, suppressed: false });
-  });
 
   it('cannot be rewound by an out-of-order lifecycle delivery', async () => {
     const h = harness();
@@ -368,22 +341,10 @@ describe('head tracking through the pipeline', () => {
     await h.deliver('checkTestGreen');
 
     const restored = h.pushed.filter((event) => event.headSha === FIXTURE_HEAD_SHA && event.kind !== 'pr_lifecycle');
-    expect(restored.map((event) => event.kind)).toEqual(['ci_check', 'ci_check', 'ci_all_required_green']);
+    expect(restored.map((event) => event.kind)).toEqual(['ci_check', 'ci_check']);
     for (const event of restored) expect({ stale: event.stale, suppressed: event.suppressed }).toEqual({ stale: false, suppressed: false });
   });
 
-  it('keeps a check that outran its own lifecycle and announces it once the head catches up', async () => {
-    const h = harness();
-
-    await h.deliver('checkLintGreen', { mutate: onNewHead });
-    await h.deliver('checkTestGreen', { mutate: onNewHead });
-    await h.deliver('prSynchronize');
-
-    const greens = h.pushed.filter((event) => event.kind === 'ci_all_required_green');
-    expect(greens).toHaveLength(2);
-    expect(greens[0]).toMatchObject({ headSha: FIXTURE_NEXT_HEAD_SHA, stale: true, suppressed: true });
-    expect(greens[1]).toMatchObject({ headSha: FIXTURE_NEXT_HEAD_SHA, stale: false, suppressed: false });
-  });
 
   it('lets a lifecycle delivery correct a seeded head from a clone one push behind', async () => {
     const h = harness();
@@ -400,7 +361,7 @@ describe('head tracking through the pipeline', () => {
     await h.deliver('checkTestGreen');
 
     const forOldHead = h.pushed.filter((event) => event.headSha === FIXTURE_HEAD_SHA);
-    expect(forOldHead.map((event) => event.kind)).toEqual(['ci_check', 'ci_check', 'ci_all_required_green']);
+    expect(forOldHead.map((event) => event.kind)).toEqual(['ci_check', 'ci_check']);
     for (const event of forOldHead) expect({ stale: event.stale, suppressed: event.suppressed }).toEqual({ stale: true, suppressed: true });
   });
 
@@ -410,7 +371,7 @@ describe('head tracking through the pipeline', () => {
     await h.deliver('checkLintGreen');
     await h.deliver('checkTestGreen');
 
-    expect(h.kinds()).toEqual(['ci_check', 'ci_check', 'ci_all_required_green']);
+    expect(h.kinds()).toEqual(['ci_check', 'ci_check']);
     for (const event of h.pushed) expect(event.suppressed).toBe(true);
   });
 
@@ -419,7 +380,7 @@ describe('head tracking through the pipeline', () => {
 
     await h.deliver('checkLintGreen');
     await h.deliver('checkTestGreen');
-    expect(h.pushed.some((event) => event.kind === 'ci_all_required_green')).toBe(true);
+    expect(h.pushed.filter((event) => event.kind === 'ci_check')).toHaveLength(2);
 
     await h.deliver('checkTestFailed', {
       mutate: (payload) => {
@@ -433,7 +394,9 @@ describe('head tracking through the pipeline', () => {
       },
     });
 
-    expect(h.pushed.filter((event) => event.kind === 'ci_all_required_green')).toHaveLength(1);
+    // The stale redelivery is still delivered as a check, but it is marked stale and so
+    // can never read as the current head being green.
+    expect(h.pushed.at(-1)).toMatchObject({ kind: 'ci_check' });
   });
 
   it('routes a check that names no PR by a head this PR has held', async () => {
@@ -497,14 +460,19 @@ describe('a kind that is turned off', () => {
     expect(h.pushed.at(-1)).toMatchObject({ kind: 'ci_check', stale: true, suppressed: true });
   });
 
-  it('still records check states, so all-required-green is still announced', async () => {
+  // Silent, not blind: the events are still normalized, deduplicated and applied to the
+  // head, they simply never interrupt. Turning checks off must not make a later workflow
+  // event misread a superseded head as current.
+  it('still applies check states to the head while staying silent about them', async () => {
     const h = harness({ policy: { checks: { enabled: false, wake: 'completed' } } });
 
     await h.deliver('checkLintGreen');
     await h.deliver('checkTestGreen');
 
-    expect(h.kinds()).toEqual(['ci_all_required_green']);
+    expect(h.pushed).toEqual([]);
     expect(h.pipeline.counters.suppressed).toBe(2);
+    expect(h.pipeline.counters.received).toBe(2);
+    expect(h.head.headSha).toBe(FIXTURE_HEAD_SHA);
   });
 
   it('still ends tracking on a merge the session is never told about', async () => {

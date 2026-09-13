@@ -107,7 +107,7 @@ describe('loadConfig', () => {
   it('fills the children of an object the file only half-specifies', () => {
     const config = loaded('{"events": {"checks": {"wake": "failures"}}}');
 
-    expect(config.events.checks).toEqual({ enabled: true, wake: 'failures' });
+    expect(config.events.checks).toEqual({ enabled: false, wake: 'failures' });
     expect(config.events.comments).toEqual({ enabled: true });
     expect(config.events.lifecycle).toEqual(DEFAULT_CONFIG.events.lifecycle);
     expect(config.limits).toEqual(DEFAULT_CONFIG.limits);
@@ -117,13 +117,9 @@ describe('loadConfig', () => {
     expect(loaded('{"$schema": "./schema/config.schema.json"}').events).toEqual(DEFAULT_CONFIG.events);
   });
 
-  it('trims and dedupes required-check names and author logins', () => {
-    const config = loaded(
-      '{"events": {"requiredChecks": {"names": [" ci/lint ", "ci/test", "ci/lint", ""]}},' +
-        ' "authors": {"mode": "listed", "allow": ["Alice", "alice ", "BOB"]}}',
-    );
+  it('trims and dedupes author logins', () => {
+    const config = loaded('{"authors": {"mode": "listed", "allow": ["Alice", "alice ", "BOB"]}}');
 
-    expect(config.events.requiredChecks.names).toEqual(['ci/lint', 'ci/test']);
     expect(config.authors.allow).toEqual(['alice', 'bob']);
   });
 });
@@ -228,28 +224,24 @@ describe('resolveTracking', () => {
     events: {
       ...DEFAULT_CONFIG.events,
       checks: { enabled: true, wake: 'failures' },
-      requiredChecks: { enabled: true, names: ['ci/lint'] },
       workflows: [{ name: 'Ship It', wake: 'success' }],
     },
     authors: { mode: 'listed', allow: ['sam-reviewer'], bots: 'ignore' },
   };
 
   it('takes the argument over the file, and the file over the default', () => {
-    const fromArgument = resolveTracking(listed, { ci_events: 'all', required_checks: ['ci/test'] }, 'octo-worker');
+    const fromArgument = resolveTracking(listed, { ci_events: 'all' }, 'octo-worker');
     expect(fromArgument.policy.checks.wake).toBe('all');
-    expect(fromArgument.requiredChecks).toEqual(['ci/test']);
-    expect(fromArgument.origins).toMatchObject({ ciEvents: 'argument', requiredChecks: 'argument' });
+    expect(fromArgument.origins).toMatchObject({ ciEvents: 'argument' });
 
     const fromFile = resolveTracking(listed, {}, 'octo-worker');
     expect(fromFile.policy.checks.wake).toBe('failures');
-    expect(fromFile.requiredChecks).toEqual(['ci/lint']);
     expect(fromFile.botComments).toBe('ignore');
-    expect(fromFile.origins).toMatchObject({ ciEvents: 'config', requiredChecks: 'config', botComments: 'config' });
+    expect(fromFile.origins).toMatchObject({ ciEvents: 'config', botComments: 'config' });
 
     const fromDefault = resolveTracking(DEFAULT_CONFIG, {}, 'octo-worker');
     expect(fromDefault.policy.checks.wake).toBe('completed');
-    expect(fromDefault.requiredChecks).toEqual([]);
-    expect(fromDefault.origins).toMatchObject({ ciEvents: 'default', requiredChecks: 'default', botComments: 'default' });
+    expect(fromDefault.origins).toMatchObject({ ciEvents: 'default', botComments: 'default' });
   });
 
   it('trusts only the gh login by default, lowercased', () => {
@@ -326,7 +318,6 @@ describe('the arguments one track call may carry', () => {
   });
 
   it('names a list that is not a list instead of failing somewhere downstream', () => {
-    expect(refused({ required_checks: 'ci/lint' })).toBe('required_checks: "ci/lint" is not valid; expected an array');
     expect(refused({ comment_authors: 'dana-eng' })).toBe('comment_authors: "dana-eng" is not valid; expected an array');
     expect(refused({ comment_authors: ['dana-eng', 7] })).toBe('comment_authors.1: 7 is not valid; expected a string');
     expect(refused({ replace: 'yes' })).toBe('replace: "yes" is not valid; expected a boolean');
@@ -342,7 +333,7 @@ describe('the arguments one track call may carry', () => {
 
   it('names an unknown argument and lists the ones that would have worked', () => {
     expect(refused({ ci_event: 'all' })).toBe(
-      'arguments: unknown key "ci_event"; known keys: pr, repo, ci_events, required_checks, comment_authors, ' +
+      'arguments: unknown key "ci_event"; known keys: pr, repo, ci_events, comment_authors, ' +
         'bot_comments, replace',
     );
   });

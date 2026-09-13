@@ -32,17 +32,6 @@ function check(headSha: string, conclusion: 'success' | 'failure', stale = false
   };
 }
 
-function allGreen(headSha: string, stale = false): EnvelopeOf<'ci_all_required_green'> {
-  return {
-    ...base(stale, headSha),
-    kind: 'ci_all_required_green',
-    payload: {
-      kind: 'ci_all_required_green', prRef: pr, headSha, actorLogin: null,
-      occurredAtIso: '2026-09-09T10:00:00.000Z', htmlUrl: null, checkNames: ['ci/test'],
-    },
-  };
-}
-
 function deploy(headSha: string, stale = false): EnvelopeOf<'workflow'> {
   return {
     ...base(stale, headSha),
@@ -96,12 +85,12 @@ describe('describeEvent', () => {
   });
 
   it('suppresses every positive signal for a head that is not current', () => {
-    for (const envelope of [check(otherHead, 'success'), allGreen(otherHead), deploy(otherHead)]) {
+    for (const envelope of [check(otherHead, 'success'), deploy(otherHead)]) {
       expect(describeEvent(envelope, head)).toMatchObject({ positiveSignalSuppressed: true });
     }
     // A failure is news whatever head it is about, and a comment is not a signal at all.
     expect(describeEvent(check(otherHead, 'failure'), head)).toMatchObject({ positiveSignalSuppressed: false });
-    for (const envelope of [check(head, 'success'), allGreen(head), deploy(head)]) {
+    for (const envelope of [check(head, 'success'), deploy(head)]) {
       expect(describeEvent(envelope, head)).toMatchObject({ positiveSignalSuppressed: false });
     }
   });
