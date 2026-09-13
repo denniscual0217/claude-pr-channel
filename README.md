@@ -56,21 +56,6 @@ Behind those, the channel server exposes three tools:
 `bot_comments` and `replace`. The four filters override the matching keys in the
 [config file](#configuration) for that one PR.
 
-## What is delivered
-
-Only what a session can act on. Everything else is counted and dropped.
-
-| event | delivered |
-| --- | --- |
-| PR comment, review, inline review comment | Yes, unless the author is outside `comment_authors` (default: the `gh` login) or the body starts with `**Claude:**` |
-| Review with no body | No — it is the envelope around inline comments that arrive on their own |
-| CI check | `completed` (default) every finished check; `failures` only the ones that finished badly; `all` every transition |
-| A watched workflow (`events.workflows`, none by default) | Whatever that entry's `wake` says: `success` (default) only a green run, `failures` only one that finished badly, `completed` either, `all` every transition |
-| PR lifecycle (opened, synchronize, draft, ready, reopened, closed, merged) | Yes; `closed`/`merged` is delivered and then stops tracking |
-| Other pull_request actions (labeled, assigned, review_requested, edited, …) | Only once turned on under `events.lifecycle`; the label, assignee, reviewer or milestone it names is delivered as untrusted text |
-| Anything for another PR in the repo | No — counted as `dropped_other_pr` |
-| A green for a head the PR has already left | Delivered as history, flagged stale, never as a green light |
-
 ## Editing the configuration
 
 The file is plain JSON and meant to be edited by hand. There is also a local editor:
@@ -79,33 +64,15 @@ The file is plain JSON and meant to be edited by hand. There is also a local edi
 bun run config
 ```
 
-It serves a form on `127.0.0.1` — built from the same JSON Schema the plugin validates
-against, so an option added to the config appears in the form without anyone updating the
-UI. A **Raw JSON** tab edits the file directly, and switching tabs carries your edits
-across rather than dropping them.
+It serves a form on `127.0.0.1`, generated from the same schema the plugin validates
+against, plus a **Raw JSON** tab. Saving goes through the plugin's own loader, so the
+editor cannot write a file the plugin would then refuse, and through a temporary file and
+a rename, so an interrupted save leaves the previous config intact.
 
-Saving validates through the plugin's own loader, so the editor cannot write a file the
-plugin would then refuse at startup; the error names the key, what was wrong and what was
-expected. Writes go through a temporary file and a rename, so an interrupted save leaves
-the previous config intact.
-
-### Keeping it running
-
-Started by hand, the editor dies with the shell that started it — which is awkward when
-the device you edit from cannot restart it. `packaging/pr-channel-config-ui.service`
-installs it as a systemd unit that comes back on reboot and asks Tailscale for the
-address to bind at each start:
-
-```sh
-sed -e "s|@BUN@|$(command -v bun)|" -e "s|@REPO@|$PWD|" \
-  packaging/pr-channel-config-ui.service > /etc/systemd/system/pr-channel-config-ui.service
-systemctl daemon-reload && systemctl enable --now pr-channel-config-ui
-```
-
-If Tailscale is unavailable the address comes back empty and the editor binds loopback,
-so a VPN outage makes it unreachable rather than public. The unit also sets `HOME`,
-without which neither the editor nor the plugin can say where the configuration file
-lives.
+`PR_CHANNEL_UI_HOST` binds a different address — a VPN one, to edit from another device.
+`0.0.0.0` is refused: the editor has no authentication. `PR_CHANNEL_UI_PORT` moves the
+port from 4319. Started by hand it dies with its shell, so run it under a service manager
+if you want it to survive a reboot.
 
 Changes apply when a channel next starts. A session already tracking keeps the settings it
 began with.
@@ -148,126 +115,20 @@ Generated per `track`, held in memory, never written to a file, a log or a marke
 That cannot be avoided without replacing gh-webhook, and it means **this is not safe on a
 machine you share with people you would not trust with that repository**.
 
-## Cleanup
-
-Every path leaves nothing behind, and every delete is idempotent — a 404 counts as done.
-
-| what happens | what cleans up |
-| --- | --- |
-| `untrack`, or the PR is merged or closed | The channel: listener, `gh`, DELETE hook, marker removed |
-| `gh` created a hook and died before anything confirmed it (a failed dial, a restart in progress) | The channel, at teardown and before every respawn: it lists the repository again and deletes the one hook that appeared since `gh` was launched |
-| Session exits, stdin closes, SIGTERM/SIGINT/SIGHUP (including `tmux kill-session`) | The channel, same sequence |
-| A DELETE fails (a blip during a restart is the common one) | Whoever gets there first: the id is kept, retried at the next respawn and at teardown, sent to the janitor, and named by the marker for the next sweep |
-| The channel is SIGKILLed | The janitor: its stdin pipe closes and its parent pid changes, so it kills `gh` and deletes the hook |
-| The channel **and** the janitor are killed together, or the machine crashes | The next `track` on this machine: it sweeps the markers left behind |
-
-Markers live under `${XDG_CACHE_HOME:-~/.cache}/claude-pr-channel/hooks/`, or under
-`<cache.dir>/hooks/` when the config names one. They name the
-hook, the `gh` pid, the janitor pid and any hook whose DELETE failed, and nothing else —
-never a secret. The sweep only ever touches a hook that has a marker whose janitor is
-dead, which is what keeps it from disturbing another live session, another machine, or a
-hook a person created by hand.
-
-Nothing is deleted that this session cannot show is its own. A ping signed with this
-session's secret is the proof; failing that, a single hook that appeared since `gh` was
-launched is unambiguous, because `gh` creates exactly one. Once a hook id is confirmed,
-that guess is never made again for the launch it belongs to: deleting the confirmed hook
-is the whole job, and anything else on the repository is another session's. When two or
-more unconfirmed hooks appeared, one of them may be another session's, so **none** is
-deleted: the ids are reported by `track` or `untrack` for a person to judge, with the
-`gh api -X DELETE` line to remove them. A hook left that way is a leak this session
-names; a hook deleted that way would silently stop another session's events.
-
-## What is intentionally not recovered
-
-- **Events from before `track`.** Nothing is replayed; look them up with `gh` if they
-  matter.
-- **Events during a forwarder restart.** There is no queue. A restart window loses what
-  arrives in it, and `status` shows `restarting`.
-- **A failed push into the session.** Counted as `notify_failed`, never retried.
-- **Two sessions on one PR.** Both are tracked, both get everything, and neither knows
-  about the other. Neither ever deletes the other's webhook, at the cost of leaving a
-  webhook it cannot prove is its own in place, named, for a person to remove.
-
 ## Configuration
 
 One JSON file, at `${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json`.
-`PR_CHANNEL_CONFIG=/abs/path.json` points the plugin at a different file; that is a
-location, not a setting, and it is the only environment variable the plugin itself reads.
+Every key is optional, `{}` is valid, and a missing file just means the defaults.
 
-For the settings people change most, with the JSON for each, see
-[docs/configuration.md](docs/configuration.md). What follows is the full reference.
+By default the plugin delivers comments, reviews and the main lifecycle actions, and no
+CI at all — name the workflows you want under `events.workflows`. `bun run config` opens
+an editor for the file.
 
-A missing file is fine: the plugin runs on the defaults below and `track` and `status`
-say where it looked. A file that is present but invalid is never fallen back from — the
-error names the key, what was wrong and what was expected, and `track` refuses until it
-is fixed. A file `PR_CHANNEL_CONFIG` names must exist.
+An invalid file is never fallen back from: `track` refuses until it is fixed, naming the
+key, what was wrong and what was expected.
 
-Precedence, per track: **a tool argument**, then **this file**, then **the built-in
-default**. The `filters:` line in the `track` output says which of the three each value
-came from. An argument is checked against the same definition as the file and refused the
-same way — `invalid_argument`, naming the argument, what it got and what was expected.
-MCP validates the request, never a tool's own input schema, so the layer that outranks
-everything else is the one that most needs parsing before it is used.
-
-Every key is optional and `{}` is a valid file; a defaulted object fills in its children.
-These are the defaults in full:
-
-```json
-{
-  "$schema": "./schema/config.schema.json",
-  "version": 1,
-  "events": {
-    "comments": { "enabled": true },
-    "reviews": { "enabled": true },
-    "reviewComments": { "enabled": true },
-    "checks": { "enabled": true, "wake": "completed" },
-    "workflows": [],
-    "lifecycle": {
-      "opened": true, "synchronize": true, "ready_for_review": true,
-      "converted_to_draft": true, "reopened": true, "closed": true, "merged": true,
-      "labeled": false, "unlabeled": false, "assigned": false, "unassigned": false,
-      "review_requested": false, "review_request_removed": false, "edited": false,
-      "milestoned": false, "demilestoned": false, "locked": false, "unlocked": false,
-      "auto_merge_enabled": false, "auto_merge_disabled": false,
-      "enqueued": false, "dequeued": false
-    }
-  },
-  "authors": { "mode": "operator", "allow": [], "bots": "handle" },
-  "limits": {
-    "maxPayloadBytes": 1048576,
-    "rateLimit": { "maxDeliveries": 120, "windowMs": 60000 }
-  },
-  "cache": { "dir": null, "sweepOnTrack": true }
-}
-```
-
-`authors.mode` is `operator` (the `gh` login alone), `listed` (exactly `authors.allow`) or
-`anyone`. `events.checks.wake` is `failures`, `completed` or `all`. A workflow is matched
-on `workflow_run.name`, exactly and case-sensitively; nothing inspects what it does, so
-the same key fits an image build, a docs publish or a nightly benchmark. Each entry
-carries its own `wake`, because a green build is a go-ahead while a failing benchmark is
-the only run worth hearing about.
-
-**Disabled means silent, not blind.** The switch is applied last, after normalization: a
-disabled `synchronize` still advances the head, so later events are still marked stale; a
-disabled `checks` still applies check states to the head; a disabled `closed`/`merged`
-still ends tracking, the session is simply not told. Suppressed
-events are counted in the `suppressed` counter.
-
-### The schema
-
-`schema/config.schema.json` is a JSON Schema (draft 2020-12) generated from the same
-definition that validates the file, so the two cannot drift. Point an editor at it with
-`$schema`, or read it from `<CLAUDE_PLUGIN_ROOT>/schema/config.schema.json` — `status`
-prints that path. Regenerate it with `bun run schema` after changing `src/config-schema.ts`;
-`bun test` fails if the committed file is stale.
-
-Adding an option that is not in the schema is a code change on purpose: an unknown key is
-rejected with the list of keys that would have worked, rather than accepted and silently
-delivering nothing. A pull_request action outside the catalogue or a new GitHub
-event needs a normalizer branch as well as a key. Watching another workflow does not:
-that is a list entry.
+**[docs/configuration.md](docs/configuration.md) is the manual** — every setting, what
+each one delivers, and the JSON for the things people actually change.
 
 ## Development
 

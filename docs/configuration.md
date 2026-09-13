@@ -36,9 +36,10 @@ the internet. Give it one already-private address.
 ### Keeping it running
 
 Started by hand, the editor dies with its shell — awkward when the device you edit from
-cannot restart it. `packaging/pr-channel-config-ui.service` installs it as a systemd unit
-that survives reboots and resolves the VPN address at each start, falling back to loopback
-if the VPN is down. Install instructions are in the file.
+cannot restart it. Run it under a service manager to survive reboots. Two things matter in
+the unit: resolve the VPN address at start rather than hard-coding it, so a VPN outage
+leaves the editor on loopback instead of somewhere unintended; and set `HOME`, without
+which neither the editor nor the plugin can say where the configuration file lives.
 
 ## Recipes
 
@@ -151,8 +152,52 @@ boundary. On a public repository it means strangers.
 
 ## Settings are file-only
 
-The old `PR_CHANNEL_*` environment variables are refused by name, each pointing at the
-key that replaced it: two sources for one value is how a UI writes a file and nothing
-changes because a forgotten export won. `PR_CHANNEL_CONFIG` survives, and
-`PR_CHANNEL_UI_HOST` / `PR_CHANNEL_UI_PORT` configure the editor — all three name a
-location, not a setting.
+Nothing here can be set from the environment; the old `PR_CHANNEL_*` variables are refused
+by name, each naming the key that replaced it. Two sources for one value is how a UI writes
+a file and nothing changes because a forgotten export won. The three that remain —
+`PR_CHANNEL_CONFIG`, `PR_CHANNEL_UI_HOST`, `PR_CHANNEL_UI_PORT` — name a location, not a
+setting.
+
+## Every setting
+
+Every key is optional and `{}` is a valid file; a defaulted object fills in its children.
+These are the defaults in full:
+
+```json
+{
+  "$schema": "./schema/config.schema.json",
+  "version": 1,
+  "events": {
+    "comments": { "enabled": true },
+    "reviews": { "enabled": true },
+    "reviewComments": { "enabled": true },
+    "checks": { "enabled": false, "wake": "completed" },
+    "workflows": [],
+    "lifecycle": {
+      "opened": true, "synchronize": true, "ready_for_review": true,
+      "converted_to_draft": true, "reopened": true, "closed": true, "merged": true,
+      "labeled": false, "unlabeled": false, "assigned": false, "unassigned": false,
+      "review_requested": false, "review_request_removed": false, "edited": false,
+      "milestoned": false, "demilestoned": false, "locked": false, "unlocked": false,
+      "auto_merge_enabled": false, "auto_merge_disabled": false,
+      "enqueued": false, "dequeued": false
+    }
+  },
+  "authors": { "mode": "operator", "allow": [], "bots": "handle" },
+  "limits": {
+    "maxPayloadBytes": 1048576,
+    "rateLimit": { "maxDeliveries": 120, "windowMs": 60000 }
+  },
+  "cache": { "dir": null, "sweepOnTrack": true }
+}
+```
+
+`authors.mode` is `operator` (the `gh` login alone), `listed` (exactly `authors.allow`) or
+`anyone`. `events.checks.wake` is `failures`, `completed` or `all`.
+
+### The schema behind it
+
+`schema/config.schema.json` is generated from the same definition that validates the file,
+so the two cannot drift. Point an editor at it with `$schema`; `status` prints its path.
+Regenerate with `bun run schema` after changing `src/config-schema.ts` — `bun test` fails
+if the committed file is stale.
