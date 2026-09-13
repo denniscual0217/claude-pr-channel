@@ -1,13 +1,31 @@
-// A local editor for the configuration file. It binds loopback only: this file decides
-// who may drive an agent that pushes code, so it must never be reachable off the machine.
-// Anyone with a shell here can already edit the file directly, which is why there is no
-// auth — the server grants nothing the filesystem does not.
+// A local editor for the configuration file. There is no auth: anyone with a shell here
+// can already edit the file directly, so the server grants nothing the filesystem does
+// not — which is also why it binds loopback unless told otherwise. This file decides who
+// may drive an agent that pushes code, so widen the bind only to an address that is
+// already access-controlled, such as a VPN interface. PR_CHANNEL_UI_HOST refuses the
+// wildcard addresses for that reason: on a box with a public interface they would put
+// this editor on the internet.
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { configJsonSchema } from '../src/config-schema.ts';
 import { CONFIG_PATH_ENV, configPath, loadConfig } from '../src/config.ts';
 
-const HOST = '127.0.0.1';
+const WILDCARD = new Set(['0.0.0.0', '::', '[::]', '*']);
+
+function host(env: NodeJS.ProcessEnv): string {
+  const requested = (env['PR_CHANNEL_UI_HOST'] ?? '').trim();
+  if (requested === '') return '127.0.0.1';
+  if (WILDCARD.has(requested)) {
+    process.stderr.write(
+      `PR_CHANNEL_UI_HOST=${requested} would serve the editor on every interface, including any public one.\n` +
+        `Name the single address to listen on instead, such as this machine's VPN address.\n`,
+    );
+    process.exit(1);
+  }
+  return requested;
+}
+
+const HOST = host(process.env);
 const PORT = Number(process.env['PR_CHANNEL_UI_PORT'] ?? 4319);
 const PATH_TO_CONFIG = configPath(process.env);
 const PAGE = join(import.meta.dir, 'index.html');
@@ -77,6 +95,6 @@ const server = Bun.serve({
 process.stdout.write(
   `claude-pr-channel config editor\n` +
     `  editing  ${PATH_TO_CONFIG}\n` +
-    `  open     http://${HOST}:${server.port}\n` +
+    `  open     http://${HOST.includes(':') ? `[${HOST}]` : HOST}:${server.port}\n` +
     `  stop     ctrl-c\n`,
 );

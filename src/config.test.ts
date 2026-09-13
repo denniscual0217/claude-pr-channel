@@ -57,6 +57,19 @@ describe('where the config file lives', () => {
       '/tmp/pr.json',
     );
   });
+
+  // A service manager passes no HOME. Joining an empty one used to yield a relative
+  // ".config/..." that resolved against the working directory, so the editor silently
+  // edited a different file from the one the plugin reads.
+  it('refuses to guess when there is no home to derive it from', () => {
+    expect(() => configPath({})).toThrow(/neither HOME nor XDG_CONFIG_HOME/);
+    expect(() => configPath({ HOME: '   ' })).toThrow(/neither HOME nor XDG_CONFIG_HOME/);
+  });
+
+  it('still resolves when a service sets only one of them', () => {
+    expect(configPath({ XDG_CONFIG_HOME: '/xdg' })).toBe('/xdg/claude-pr-channel/config.json');
+    expect(configPath({ [CONFIG_PATH_ENV]: '/tmp/pr.json' })).toBe('/tmp/pr.json');
+  });
 });
 
 describe('loadConfig', () => {

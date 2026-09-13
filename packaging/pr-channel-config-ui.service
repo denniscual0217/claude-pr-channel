@@ -1,0 +1,47 @@
+# Keeps the configuration editor running so it can be reached from another device on
+# the VPN — a phone cannot restart a process that died with the shell that started it.
+#
+# Install:
+#   sed -e "s|@BUN@|$(command -v bun)|" -e "s|@REPO@|$PWD|" \
+#     packaging/pr-channel-config-ui.service > /etc/systemd/system/pr-channel-config-ui.service
+#   systemctl daemon-reload && systemctl enable --now pr-channel-config-ui
+#
+# The editor has no authentication, so the address it binds decides who can reach it.
+# This unit asks Tailscale for the machine's own tailnet address at start. If Tailscale
+# is down or not installed the substitution is empty, the server falls back to 127.0.0.1,
+# and the editor is unreachable rather than exposed. Adapt the ExecStart if a different
+# VPN provides the address, but keep that property: it must fail closed.
+
+[Unit]
+Description=claude-pr-channel configuration editor
+Documentation=https://github.com/denniscual0217/claude-pr-channel/blob/main/docs/configuration.md
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+
+# systemd passes no HOME, and without one the editor cannot say where the configuration
+# file lives — it refuses to start rather than guess at a path the plugin does not read.
+Environment=HOME=%h
+ExecStart=/bin/sh -c 'exec env PR_CHANNEL_UI_HOST="$(tailscale ip -4 2>/dev/null | head -n1)" @BUN@ ui/server.ts'
+
+# The tailnet address exists only once tailscaled has finished coming up, which can be
+# after this unit is first started; restarting until it does is what makes a reboot land
+# on the tailnet rather than on loopback.
+Restart=always
+RestartSec=5s
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

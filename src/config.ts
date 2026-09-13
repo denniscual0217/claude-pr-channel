@@ -116,11 +116,23 @@ export const LEGACY_ENV: Readonly<Record<string, string>> = {
   PR_CHANNEL_SWEEP: 'cache.sweepOnTrack',
 };
 
+// Throws rather than falling back when there is no home to derive from: an empty HOME
+// used to join into a relative ".config/...", which resolves against the working
+// directory. Under a service manager, which passes no HOME, that silently pointed the
+// editor at a different file from the one the plugin reads — edits appeared to save and
+// then did nothing.
 export function configPath(env: Env = process.env): string {
   const explicit = (env[CONFIG_PATH_ENV] ?? '').trim();
   if (explicit !== '') return explicit;
-  const base = (env['XDG_CONFIG_HOME'] ?? '').trim() || join(env['HOME'] ?? '', '.config');
-  return join(base, 'claude-pr-channel', 'config.json');
+  const xdg = (env['XDG_CONFIG_HOME'] ?? '').trim();
+  const home = (env['HOME'] ?? '').trim();
+  if (xdg === '' && home === '') {
+    throw new ConfigError(
+      `cannot locate the configuration file: neither HOME nor XDG_CONFIG_HOME is set.\n` +
+        `Set ${CONFIG_PATH_ENV} to an absolute path, or set HOME. A service unit must set one of them explicitly.`,
+    );
+  }
+  return join(xdg || join(home, '.config'), 'claude-pr-channel', 'config.json');
 }
 
 export function schemaPath(pluginRoot: string): string {

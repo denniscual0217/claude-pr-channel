@@ -90,10 +90,39 @@ plugin would then refuse at startup; the error names the key, what was wrong and
 expected. Writes go through a temporary file and a rename, so an interrupted save leaves
 the previous config intact.
 
-It binds loopback only and has no authentication, deliberately: this file decides who may
-drive an agent that pushes code, so it must never be reachable off the machine — and
-anyone with a shell here can already edit the file directly, so the server grants nothing
-the filesystem does not. Do not port-forward it.
+It has no authentication, deliberately: anyone with a shell here can already edit the
+file directly, so the server grants nothing the filesystem does not. That is also why it
+binds `127.0.0.1` unless told otherwise.
+
+To edit from another device, `PR_CHANNEL_UI_HOST` names the address to listen on and
+`PR_CHANNEL_UI_PORT` moves the port (default 4319):
+
+```
+PR_CHANNEL_UI_HOST=100.64.0.1 bun run config   # this machine's VPN address
+```
+
+Widen it only to an address that is already access-controlled, such as a VPN interface.
+This file decides who may drive an agent that pushes code. `0.0.0.0` is refused outright:
+on a machine with a public interface, the wildcard would put an unauthenticated editor on
+the internet.
+
+### Keeping it running
+
+Started by hand, the editor dies with the shell that started it — which is awkward when
+the device you edit from cannot restart it. `packaging/pr-channel-config-ui.service`
+installs it as a systemd unit that comes back on reboot and asks Tailscale for the
+address to bind at each start:
+
+```sh
+sed -e "s|@BUN@|$(command -v bun)|" -e "s|@REPO@|$PWD|" \
+  packaging/pr-channel-config-ui.service > /etc/systemd/system/pr-channel-config-ui.service
+systemctl daemon-reload && systemctl enable --now pr-channel-config-ui
+```
+
+If Tailscale is unavailable the address comes back empty and the editor binds loopback,
+so a VPN outage makes it unreachable rather than public. The unit also sets `HOME`,
+without which neither the editor nor the plugin can say where the configuration file
+lives.
 
 Changes apply when a channel next starts. A session already tracking keeps the settings it
 began with.
@@ -204,7 +233,10 @@ names; a hook deleted that way would silently stop another session's events.
 
 One JSON file, at `${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json`.
 `PR_CHANNEL_CONFIG=/abs/path.json` points the plugin at a different file; that is a
-location, not a setting, and it is the only environment variable involved.
+location, not a setting, and it is the only environment variable the plugin itself reads.
+
+For the settings people change most, with the JSON for each, see
+[docs/configuration.md](docs/configuration.md). What follows is the full reference.
 
 A missing file is fine: the plugin runs on the defaults below and `track` and `status`
 say where it looked. A file that is present but invalid is never fallen back from — the
