@@ -3,9 +3,8 @@
 **Your Claude Code session watches its own pull request and acts on it.**
 
 CI goes red — the session reads the failing job, fixes the cause, pushes, and the check
-goes green. A reviewer leaves an inline comment — it answers in that thread, or changes
-the code and says what it changed. You do not relay any of it, and you do not sit watching
-the terminal for something to happen.
+goes green. A reviewer leaves an inline comment — it answers in that thread. No more
+babysitting the pull request; the plugin does it for you.
 
 ## Install
 
