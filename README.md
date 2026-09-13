@@ -90,22 +90,6 @@ plugin would then refuse at startup; the error names the key, what was wrong and
 expected. Writes go through a temporary file and a rename, so an interrupted save leaves
 the previous config intact.
 
-It has no authentication, deliberately: anyone with a shell here can already edit the
-file directly, so the server grants nothing the filesystem does not. That is also why it
-binds `127.0.0.1` unless told otherwise.
-
-To edit from another device, `PR_CHANNEL_UI_HOST` names the address to listen on and
-`PR_CHANNEL_UI_PORT` moves the port (default 4319):
-
-```
-PR_CHANNEL_UI_HOST=100.64.0.1 bun run config   # this machine's VPN address
-```
-
-Widen it only to an address that is already access-controlled, such as a VPN interface.
-This file decides who may drive an agent that pushes code. `0.0.0.0` is refused outright:
-on a machine with a public interface, the wildcard would put an unauthenticated editor on
-the internet.
-
 ### Keeping it running
 
 Started by hand, the editor dies with the shell that started it — which is awkward when
@@ -164,29 +148,6 @@ Generated per `track`, held in memory, never written to a file, a log or a marke
 `gh webhook forward` takes it on its own argv, where any local user can read it with `ps`.
 That cannot be avoided without replacing gh-webhook, and it means **this is not safe on a
 machine you share with people you would not trust with that repository**.
-
-### Dependencies
-
-Two direct runtime dependencies, both at **exact versions** — a caret range is the window
-an attacker publishes into. The session start runs `bun install --frozen-lockfile`, so a
-launch can never resolve something the committed `bun.lock` does not already name; it
-fails loudly instead. Dependabot opens a weekly PR so updates are reviewed rather than
-drifted into.
-
-Worth knowing what that actually covers: the MCP SDK pulls in **94 packages** —
-`express`, `hono`, `jose`, `ajv`, `cross-spawn` and their trees — none of which this
-plugin uses directly. Pinning makes that surface *stable*, not small. Bun does not run
-`postinstall` scripts for untrusted dependencies, and this package declares no
-`trustedDependencies`, so nothing in that tree executes at install time.
-
-### What is verified
-
-- The listener binds `127.0.0.1:0`. Nothing off the machine can reach it.
-- Every delivery is HMAC-SHA256 verified over the raw bytes, before the body is parsed.
-- A delivery for any repository but the tracked one is refused with 403.
-- A repeated `X-GitHub-Delivery` is dropped, so redelivery is harmless.
-- An event for a superseded head is flagged stale and can never read as the current head
-  being green.
 
 ## Cleanup
 
