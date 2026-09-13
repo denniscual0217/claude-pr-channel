@@ -1,16 +1,30 @@
 # claude-pr-channel
 
-A Claude Code **plugin** that binds one session to one GitHub pull request. The session's
-own MCP server owns a webhook for that PR, verifies every delivery, and pushes the events
-worth acting on straight into the conversation as `<channel source="pr-channel">` turns.
+**Your Claude Code session watches its own pull request and acts on it.**
 
-There is no daemon, no database, and no machine-wide state. Tracking is a running
-process: when the session goes, the webhook goes with it.
+CI goes red — the session reads the failing job, fixes the cause, pushes, and the check
+goes green. A reviewer leaves an inline comment — it answers in that thread, or changes
+the code and says what it changed. You do not relay any of it, and you do not sit watching
+the terminal for something to happen.
 
 ```
-claude (session) → bun server.ts (channel) → gh webhook forward
-                                           → bun src/github/janitor.ts
+/pr-channel:track 3053
 ```
+
+That is the whole setup. From then on the PR drives the session.
+
+You decide what is worth interrupting for. Name the workflows you care about and the rest
+stays silent — `Typecheck` and `Lint` only when they fail, an image build only when it
+succeeds, a reviewer's comments but not a bot's. A repository with twenty checks does not
+have to mean twenty interruptions per push.
+
+Nothing runs in the background. The webhook belongs to the session that made it: close the
+terminal and it is deleted, with no daemon, no database and nothing left on the machine.
+Two sessions on two PRs never see each other's events.
+
+Worth knowing before you point it at a repository you care about: a PR comment is text
+other people write, and it reaches an agent that can edit files and push. By default only
+your own comments do that. Read [Security](#security) before widening it.
 
 ## Install
 
