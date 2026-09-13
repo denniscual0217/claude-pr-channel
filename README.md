@@ -269,26 +269,6 @@ delivering nothing. A pull_request action outside the catalogue or a new GitHub
 event needs a normalizer branch as well as a key. Watching another workflow does not:
 that is a list entry.
 
-### Environment variables this replaced
-
-All nine are gone as values. One source, one file: a forgotten `export` that outranked a
-file a UI had just written is exactly the surprise this avoids. Any of them still set at
-startup makes `track` refuse, naming the key that took over.
-
-| gone | now |
-| --- | --- |
-| `PR_CHANNEL_COMMENT_AUTHORS` | `authors.mode` / `authors.allow` |
-| `PR_CHANNEL_BOT_COMMENTS` | `authors.bots` |
-| `PR_CHANNEL_CI_EVENTS` | `events.checks.wake` |
-| `PR_CHANNEL_MAX_PAYLOAD_BYTES` | `limits.maxPayloadBytes` |
-| `PR_CHANNEL_RATE_LIMIT_MAX` / `_WINDOW_MS` | `limits.rateLimit.maxDeliveries` / `.windowMs` |
-| `PR_CHANNEL_CACHE_DIR` | `cache.dir` |
-| `PR_CHANNEL_SWEEP` | `cache.sweepOnTrack` |
-
-What remains in the environment is never a setting: `PR_CHANNEL_CONFIG` (where the file
-is), `XDG_CONFIG_HOME` / `XDG_CACHE_HOME` / `HOME` (platform conventions), and the
-variables Claude Code sets for the plugin.
-
 ## Development
 
 ```
