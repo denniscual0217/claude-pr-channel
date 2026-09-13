@@ -63,7 +63,12 @@ const server = Bun.serve({
     const url = new URL(request.url);
 
     if (request.method === 'GET' && url.pathname === '/') {
-      return new Response(Bun.file(PAGE), { headers: { 'content-type': 'text/html; charset=utf-8' } });
+      // The form is generated from the schema, so a cached page outlives the schema it was
+      // built for: it keeps rendering fields that no longer exist and saves keys the
+      // validator now refuses, which reads as a bad config rather than a stale tab.
+      return new Response(Bun.file(PAGE), {
+        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+      });
     }
     if (request.method === 'GET' && url.pathname === '/api/schema') {
       return json(configJsonSchema());
