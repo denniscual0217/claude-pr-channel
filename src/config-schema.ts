@@ -46,6 +46,7 @@ const lifecycleShape = Object.fromEntries(
 // can never disagree about what a value is allowed to be.
 export const CiEventsEnum = z.enum(['failures', 'completed', 'all']);
 export const BotCommentsEnum = z.enum(['handle', 'ignore']);
+export const WorkflowWakeEnum = z.enum(['success', 'failures', 'completed', 'all']);
 
 const uniqueTrimmed = (values: string[]): string[] =>
   [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))];
@@ -90,7 +91,7 @@ const eventsSchema = z
           .meta({ description: 'Deliver CI check results. Disabling stays silent, not blind: check states are still recorded, so all-required-green can still be announced.' }),
         wake: CiEventsEnum
           .default('completed')
-          .meta({ description: 'Which CI transitions are worth a turn of the session: "failures" only the ones that finished badly, "completed" every finished check, "all" every transition including queued and in progress. It decides CI checks only; events.deployWorkflow is unaffected.' }),
+          .meta({ description: 'Which CI transitions are worth a turn of the session: "failures" only the ones that finished badly, "completed" every finished check, "all" every transition including queued and in progress. It decides CI checks only; events.workflows is unaffected.' }),
       })
       .prefault({})
       .meta({ description: 'CI checks: check_run, check_suite and legacy commit statuses.' }),
@@ -108,20 +109,21 @@ const eventsSchema = z
       })
       .prefault({})
       .meta({ description: 'The derived "all required checks are green" event.' }),
-    deployWorkflow: z
-      .strictObject({
-        enabled: z
-          .boolean()
-          .default(false)
-          .meta({ description: 'Deliver the result of one named GitHub Actions workflow whose successful run means what it builds is ready. Only a successful run wakes the session: a failed or still-running one never does, whatever events.checks.wake says.' }),
-        workflowName: z
-          .string()
-          .nullable()
-          .default(null)
-          .meta({ description: 'The workflow name to match, exactly and case-sensitively, against workflow_run.name. Required when enabled is true.' }),
-      })
-      .prefault({})
-      .meta({ description: 'A deploy or image-build workflow. Off until a name is configured; there is no default workflow.' }),
+    workflows: z
+      .array(
+        z.strictObject({
+          name: z
+            .string()
+            .trim()
+            .min(1)
+            .meta({ description: "The workflow's name, matched exactly and case-sensitively against workflow_run.name — the name: at the top of the workflow file, not the filename." }),
+          wake: WorkflowWakeEnum.default('success').meta({
+            description: 'Which of its runs are worth a turn of the session: "success" only a run that finished green, "failures" only one that finished badly, "completed" either, "all" every transition including queued and in progress.',
+          }),
+        }),
+      )
+      .default([])
+      .meta({ description: 'GitHub Actions workflows to watch by name, each with its own idea of what is worth waking for. An empty list watches none, which is the default: there is no workflow every repository has. Nothing here is deploy-specific — a workflow is matched by name alone, so this fits an image build, a docs publish or a nightly benchmark equally.' }),
     lifecycle: z
       .strictObject(lifecycleShape)
       .prefault({})
@@ -206,13 +208,17 @@ export const ConfigSchema = z
     cache: cacheSchema,
   })
   .superRefine((config, ctx) => {
-    if (config.events.deployWorkflow.enabled && (config.events.deployWorkflow.workflowName ?? '').trim() === '') {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['events', 'deployWorkflow', 'workflowName'],
-        message: 'required when events.deployWorkflow.enabled is true; expected the exact name of a GitHub Actions workflow',
-      });
-    }
+    const seen = new Set<string>();
+    config.events.workflows.forEach((entry, index) => {
+      if (seen.has(entry.name)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['events', 'workflows', index, 'name'],
+          message: `duplicated: "${entry.name}" is already watched; expected each workflow named once`,
+        });
+      }
+      seen.add(entry.name);
+    });
     if (config.authors.mode === 'listed' && config.authors.allow.length === 0) {
       ctx.addIssue({
         code: 'custom',
@@ -223,7 +229,7 @@ export const ConfigSchema = z
   });
 
 // Fields that also accept null, so an "expected a string" message does not read as a lie.
-export const NULLABLE_PATHS: ReadonlySet<string> = new Set(['events.deployWorkflow.workflowName', 'cache.dir']);
+export const NULLABLE_PATHS: ReadonlySet<string> = new Set(['cache.dir']);
 
 const SCHEMA_TITLE = 'claude-pr-channel configuration';
 

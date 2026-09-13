@@ -163,16 +163,16 @@ describe('a config that cannot be used', () => {
     expect(problem('{"version": 2}')).toBe('version: 2 is not allowed; expected 1');
   });
 
-  it('refuses a deploy workflow that is enabled without a name', () => {
-    for (const file of [
-      '{"events": {"deployWorkflow": {"enabled": true}}}',
-      '{"events": {"deployWorkflow": {"enabled": true, "workflowName": "  "}}}',
-    ]) {
-      expect(problem(file)).toBe(
-        'events.deployWorkflow.workflowName: required when events.deployWorkflow.enabled is true; ' +
-          'expected the exact name of a GitHub Actions workflow',
-      );
-    }
+  it('refuses a workflow with no name', () => {
+    expect(problem('{"events": {"workflows": [{"name": "  "}]}}')).toBe(
+      'events.workflows.0.name: "  " is too short; expected at least 1 character',
+    );
+  });
+
+  it('refuses the same workflow watched twice, which would disagree with itself', () => {
+    expect(problem('{"events": {"workflows": [{"name": "Ship It"}, {"name": "Ship It", "wake": "all"}]}}')).toBe(
+      'events.workflows.1.name: duplicated: "Ship It" is already watched; expected each workflow named once',
+    );
   });
 
   it('refuses the listed author mode with nobody listed', () => {
@@ -229,7 +229,7 @@ describe('resolveTracking', () => {
       ...DEFAULT_CONFIG.events,
       checks: { enabled: true, wake: 'failures' },
       requiredChecks: { enabled: true, names: ['ci/lint'] },
-      deployWorkflow: { enabled: true, workflowName: 'Ship It' },
+      workflows: [{ name: 'Ship It', wake: 'success' }],
     },
     authors: { mode: 'listed', allow: ['sam-reviewer'], bots: 'ignore' },
   };
@@ -275,10 +275,27 @@ describe('resolveTracking', () => {
     );
   });
 
-  it('only names a deploy workflow while one is enabled', () => {
-    expect(resolveTracking(listed, {}, null).deployWorkflowName).toBe('Ship It');
-    expect(resolveTracking(DEFAULT_CONFIG, {}, null).deployWorkflowName).toBeNull();
-    expect(resolveTracking(DEFAULT_CONFIG, {}, null).policy.deployWorkflow.enabled).toBe(false);
+  it('watches only the workflows that are named, and none by default', () => {
+    expect([...resolveTracking(listed, {}, null).workflowNames]).toEqual(['Ship It']);
+    expect(resolveTracking(listed, {}, null).policy.workflows.get('Ship It')).toBe('success');
+    expect([...resolveTracking(DEFAULT_CONFIG, {}, null).workflowNames]).toEqual([]);
+    expect(resolveTracking(DEFAULT_CONFIG, {}, null).policy.workflows.size).toBe(0);
+  });
+
+  it('keeps the wake value each workflow was given', () => {
+    const many = {
+      ...DEFAULT_CONFIG,
+      events: {
+        ...DEFAULT_CONFIG.events,
+        workflows: [
+          { name: 'Build Image', wake: 'success' },
+          { name: 'Nightly Bench', wake: 'failures' },
+        ],
+      },
+    } as typeof DEFAULT_CONFIG;
+    const policy = resolveTracking(many, {}, null).policy;
+    expect(policy.workflows.get('Build Image')).toBe('success');
+    expect(policy.workflows.get('Nightly Bench')).toBe('failures');
   });
 });
 

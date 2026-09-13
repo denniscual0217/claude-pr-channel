@@ -43,12 +43,12 @@ function allGreen(headSha: string, stale = false): EnvelopeOf<'ci_all_required_g
   };
 }
 
-function deploy(headSha: string, stale = false): EnvelopeOf<'deploy_workflow'> {
+function deploy(headSha: string, stale = false): EnvelopeOf<'workflow'> {
   return {
     ...base(stale, headSha),
-    kind: 'deploy_workflow',
+    kind: 'workflow',
     payload: {
-      kind: 'deploy_workflow', prRef: pr, headSha, actorLogin: null,
+      kind: 'workflow', prRef: pr, headSha, actorLogin: null,
       occurredAtIso: '2026-09-09T10:00:00.000Z', htmlUrl: null,
       workflowName: 'Build Preview Image', workflowRunId: 3, runAttempt: 1, state: { status: 'completed', conclusion: 'success' },
     },

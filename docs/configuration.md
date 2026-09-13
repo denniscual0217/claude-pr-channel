@@ -72,18 +72,25 @@ never.
 { "events": { "requiredChecks": { "names": ["ci/lint", "ci/test"] } } }
 ```
 
-**React when a deploy image finishes building.** Off by default. A successful run is
-the go-ahead for work that needs the built image; a failure deliberately never wakes
-the session, because a broken deploy build is rarely this PR's problem. The name must
-match the workflow's `name:` exactly, case included.
+**Watch a GitHub Actions workflow.** None are watched by default. Nothing here is
+deploy-specific — a workflow is matched by name alone, so this fits an image build, a
+docs publish or a nightly benchmark equally. The name must match the workflow's `name:`
+exactly, case included, and each entry decides for itself what is worth waking for.
 
 ```json
 {
   "events": {
-    "deployWorkflow": { "enabled": true, "workflowName": "Build Image" }
+    "workflows": [
+      { "name": "Build Image", "wake": "success" },
+      { "name": "Nightly Bench", "wake": "failures" }
+    ]
   }
 }
 ```
+
+`wake` is `success` (the default — only a run that finished green, the right answer for
+a build whose failure is not this PR's problem), `failures`, `completed` or `all`. An
+empty list watches nothing, so there is no separate on/off switch to contradict it.
 
 **Track labels, or any other lifecycle action.** All 22 pull-request actions are
 individually switchable. Seven are on by default: opened, synchronize,

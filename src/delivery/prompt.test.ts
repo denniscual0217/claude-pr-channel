@@ -208,9 +208,9 @@ describe('renderEventPrompt', () => {
     expect(prompt).toContain('/comments/12/replies');
   });
 
-  it('treats a successful deploy workflow as a go-ahead, not a notification', () => {
+  it('treats a successful workflow run as a go-ahead, not a notification', () => {
     const prompt = renderEventPrompt(
-      envelope('deploy_workflow', {
+      envelope('workflow', {
         workflowName: 'Ship It', workflowRunId: 9, runAttempt: 1,
         state: { status: 'completed', conclusion: 'success' },
       }),
@@ -221,22 +221,25 @@ describe('renderEventPrompt', () => {
     expect(prompt).toContain('this is the signal to do it now');
   });
 
-  it('tells the session to leave a failed deploy workflow alone, by name', () => {
+  // A failure only reaches the prompt when its wake value asked for it, so the guidance
+  // must not tell the session to ignore the very thing it was woken for.
+  it('asks the session to look at a failed workflow it was configured to hear about', () => {
     const prompt = renderEventPrompt(
-      envelope('deploy_workflow', {
+      envelope('workflow', {
         workflowName: 'Ship It', workflowRunId: 9, runAttempt: 1,
         state: { status: 'completed', conclusion: 'failure' },
       }),
     );
 
-    expect(prompt).toContain('Do not chase this');
-    expect(prompt).toContain('A failed "Ship It" run is not this session\'s');
-    expect(prompt).not.toContain('--log-failed');
+    expect(prompt).toContain('Workflow "Ship It"');
+    expect(prompt).toContain('configured to');
+    expect(prompt).toContain('worth a look');
+    expect(prompt).not.toContain('Do not chase this');
   });
 
-  it('does not call a deploy workflow that is still running a failure', () => {
+  it('does not call a workflow that is still running a failure', () => {
     const prompt = renderEventPrompt(
-      envelope('deploy_workflow', {
+      envelope('workflow', {
         workflowName: 'Ship It', workflowRunId: 9, runAttempt: 1,
         state: { status: 'in_progress' },
       }),

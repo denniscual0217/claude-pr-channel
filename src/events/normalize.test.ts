@@ -362,7 +362,7 @@ describe('check_suite', () => {
 
 describe('workflow_run', () => {
   const DEPLOY_WORKFLOW = 'Build Preview Image';
-  const deployOptions = { deployWorkflowName: DEPLOY_WORKFLOW };
+  const deployOptions = { workflowNames: new Set([DEPLOY_WORKFLOW]) };
 
   function workflowRun(overrides: Record<string, unknown> = {}, action = 'completed') {
     return {
@@ -388,7 +388,7 @@ describe('workflow_run', () => {
 
   it('normalizes the configured workflow only, matched exactly', () => {
     expect(normalizeWebhook('workflow_run', workflowRun(), deployOptions)).toEqual({
-      kind: 'deploy_workflow',
+      kind: 'workflow',
       prRef: pr,
       headSha: head,
       actorLogin: 'deployer',
@@ -405,7 +405,20 @@ describe('workflow_run', () => {
 
   it('produces nothing at all until a workflow is configured', () => {
     expect(normalizeWebhook('workflow_run', workflowRun())).toBeNull();
-    expect(normalizeWebhook('workflow_run', workflowRun(), { deployWorkflowName: null })).toBeNull();
+    expect(normalizeWebhook('workflow_run', workflowRun(), { workflowNames: null })).toBeNull();
+    expect(normalizeWebhook('workflow_run', workflowRun(), { workflowNames: new Set() })).toBeNull();
+  });
+
+  // The name is the whole of the match, so several unrelated workflows are watched the
+  // same way, and each event carries back the one it matched.
+  it('matches any of several watched workflows, naming the one that ran', () => {
+    const many = { workflowNames: new Set([DEPLOY_WORKFLOW, 'Nightly Bench']) };
+    expect(normalizeWebhook('workflow_run', workflowRun({ name: 'Nightly Bench' }), many)).toMatchObject({
+      kind: 'workflow',
+      workflowName: 'Nightly Bench',
+    });
+    expect(normalizeWebhook('workflow_run', workflowRun(), many)).toMatchObject({ workflowName: DEPLOY_WORKFLOW });
+    expect(normalizeWebhook('workflow_run', workflowRun({ name: 'Docs' }), many)).toBeNull();
   });
 
   it('maps requested, queued and in-progress runs', () => {

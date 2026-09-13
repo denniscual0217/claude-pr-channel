@@ -98,7 +98,7 @@ export function logicalFingerprint(event: PrEvent): string {
     case 'ci_all_required_green':
       parts.push(event.headSha, [...event.checkNames].sort().join(','));
       break;
-    case 'deploy_workflow':
+    case 'workflow':
       parts.push(event.headSha, event.workflowRunId, event.runAttempt, stateTag(event.state));
       break;
     case 'pr_lifecycle':

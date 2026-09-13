@@ -21,6 +21,14 @@
   .path { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin: 0 0 22px; word-break: break-all; }
   fieldset { border: 1px solid var(--line); border-radius: 6px; background: var(--card); margin: 0 0 16px; padding: 14px 16px 6px; }
   legend { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--accent); padding: 0 6px; font-weight: 600; }
+  .objlist { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+  .objrows { display: flex; flex-direction: column; gap: 6px; }
+  .objrow { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .objcell { display: flex; flex-direction: column; gap: 3px; }
+  .objkey { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+  .objadd, .objdel { font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 5px;
+                     border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .objadd:hover, .objdel:hover { border-color: var(--accent); color: var(--accent); }
   .row { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: start; padding: 7px 0; border-bottom: 1px solid var(--line); }
   .row:last-child { border-bottom: 0; }
   .key { font-family: var(--mono); font-size: 13px; }
@@ -103,6 +111,8 @@
       input = document.createElement('input');
       input.type = 'checkbox';
       input.checked = value ?? spec.default ?? false;
+    } else if (types.includes('array') && spec.items && spec.items.type === 'object') {
+      input = objectList(path, spec, value ?? spec.default ?? []);
     } else if (types.includes('array')) {
       input = document.createElement('input');
       input.type = 'text';
@@ -165,13 +175,82 @@
     }
   }
 
+  function objectList(path, spec, entries) {
+    const host = document.createElement('div');
+    host.className = 'objlist';
+    host.dataset.path = path;
+    host.dataset.types = 'array';
+    host.dataset.kind = 'objects';
+
+    const fields = Object.entries(spec.items.properties);
+    const required = new Set(spec.items.required ?? []);
+    const rows = document.createElement('div');
+    rows.className = 'objrows';
+
+    const addRow = (entry) => {
+      const row = document.createElement('div');
+      row.className = 'objrow';
+      for (const [key, sub] of fields) {
+        const cell = document.createElement('label');
+        cell.className = 'objcell';
+        const name = document.createElement('span');
+        name.className = 'objkey';
+        name.textContent = key;
+        let field;
+        if (sub.enum) {
+          field = document.createElement('select');
+          for (const option of sub.enum) {
+            const el = document.createElement('option');
+            el.value = el.textContent = option;
+            field.append(el);
+          }
+          field.value = entry?.[key] ?? sub.default ?? sub.enum[0];
+        } else {
+          field = document.createElement('input');
+          field.type = 'text';
+          field.placeholder = required.has(key) ? 'required' : '';
+          field.value = entry?.[key] ?? sub.default ?? '';
+        }
+        field.dataset.field = key;
+        if (sub.description) field.title = sub.description;
+        cell.append(name, field);
+        row.append(cell);
+      }
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'objdel';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => row.remove());
+      row.append(remove);
+      rows.append(row);
+    };
+
+    for (const entry of entries) addRow(entry);
+
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'objadd';
+    add.textContent = 'Add';
+    add.addEventListener('click', () => addRow(null));
+
+    host.append(rows, add);
+    return host;
+  }
+
   function collect() {
     const next = structuredClone(config);
     for (const input of $('form').querySelectorAll('[data-path]')) {
       const { path, types, kind } = input.dataset;
       const list = types.split(',');
       let value;
-      if (input.type === 'checkbox') value = input.checked;
+      if (kind === 'objects') {
+        value = [...input.querySelectorAll('.objrow')].map((row) => {
+          const entry = {};
+          for (const field of row.querySelectorAll('[data-field]')) entry[field.dataset.field] = field.value.trim();
+          return entry;
+        });
+      }
+      else if (input.type === 'checkbox') value = input.checked;
       else if (kind === 'list') value = input.value.split(',').map((s) => s.trim()).filter(Boolean);
       else if (input.type === 'number') value = input.value === '' ? undefined : Number(input.value);
       else if (input.value === '' && list.includes('null')) value = null;

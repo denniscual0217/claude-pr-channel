@@ -66,7 +66,7 @@ Only what a session can act on. Everything else is counted and dropped.
 | Review with no body | No — it is the envelope around inline comments that arrive on their own |
 | CI check | `completed` (default) every finished check; `failures` only the ones that finished badly; `all` every transition |
 | All required checks green | Derived from `required_checks`, announced once per head |
-| Deploy workflow (`events.deployWorkflow`, off by default) | Only a successful run; a failure is not this session's to chase |
+| A watched workflow (`events.workflows`, none by default) | Whatever that entry's `wake` says: `success` (default) only a green run, `failures` only one that finished badly, `completed` either, `all` every transition |
 | PR lifecycle (opened, synchronize, draft, ready, reopened, closed, merged) | Yes; `closed`/`merged` is delivered and then stops tracking |
 | Other pull_request actions (labeled, assigned, review_requested, edited, …) | Only once turned on under `events.lifecycle`; the label, assignee, reviewer or milestone it names is delivered as untrusted text |
 | Anything for another PR in the repo | No — counted as `dropped_other_pr` |
@@ -224,7 +224,7 @@ These are the defaults in full:
     "reviewComments": { "enabled": true },
     "checks": { "enabled": true, "wake": "completed" },
     "requiredChecks": { "enabled": true, "names": [] },
-    "deployWorkflow": { "enabled": false, "workflowName": null },
+    "workflows": [],
     "lifecycle": {
       "opened": true, "synchronize": true, "ready_for_review": true,
       "converted_to_draft": true, "reopened": true, "closed": true, "merged": true,
@@ -245,9 +245,11 @@ These are the defaults in full:
 ```
 
 `authors.mode` is `operator` (the `gh` login alone), `listed` (exactly `authors.allow`) or
-`anyone`. `events.checks.wake` is `failures`, `completed` or `all`. A deploy workflow is
-matched on `workflow_run.name`, exactly and case-sensitively, and `enabled: true` requires
-a name.
+`anyone`. `events.checks.wake` is `failures`, `completed` or `all`. A workflow is matched
+on `workflow_run.name`, exactly and case-sensitively; nothing inspects what it does, so
+the same key fits an image build, a docs publish or a nightly benchmark. Each entry
+carries its own `wake`, because a green build is a go-ahead while a failing benchmark is
+the only run worth hearing about.
 
 **Disabled means silent, not blind.** The switch is applied last, after normalization: a
 disabled `synchronize` still advances the head, so later events are still marked stale; a
@@ -265,8 +267,9 @@ prints that path. Regenerate it with `bun run schema` after changing `src/config
 
 Adding an option that is not in the schema is a code change on purpose: an unknown key is
 rejected with the list of keys that would have worked, rather than accepted and silently
-delivering nothing. A pull_request action outside the catalogue, a new GitHub event or a
-second deploy workflow all need a normalizer branch as well as a key.
+delivering nothing. A pull_request action outside the catalogue or a new GitHub
+event needs a normalizer branch as well as a key. Watching another workflow does not:
+that is a list entry.
 
 ### Environment variables this replaced
 

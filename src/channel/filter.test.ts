@@ -3,7 +3,7 @@ import { DEFAULT_CONFIG, resolveTracking } from '../config.js';
 import { newEventId } from '../events/ids.js';
 import type { EnvelopeOf, PrEventKind, PrLifecycleAction, PrRef } from '../types.js';
 import { untrusted } from '../types.js';
-import type { CiEvents, DeliveryPolicy } from './filter.js';
+import type { CiEvents, DeliveryPolicy, WorkflowWake } from './filter.js';
 import { worthWaking } from './filter.js';
 
 const pr: PrRef = { repo: 'acme-labs/widget-service', prNumber: 42 };
@@ -18,9 +18,14 @@ function withWake(wake: CiEvents): DeliveryPolicy {
   return policy({ checks: { enabled: true, wake } });
 }
 
-// The deploy workflow is off until an operator names one, so every test about it says so.
-function withDeploy(wake: CiEvents): DeliveryPolicy {
-  return policy({ checks: { enabled: true, wake }, deployWorkflow: { enabled: true } });
+// No workflow is watched until an operator names one, so every test about it says so.
+function watching(wake: WorkflowWake, name = 'Ship It'): DeliveryPolicy {
+  return policy({ workflows: new Map([[name, wake]]) });
+}
+
+// The old deploy behaviour, now just one entry's wake value among four.
+function withDeploy(ciWake: CiEvents): DeliveryPolicy {
+  return { ...watching('success'), checks: { enabled: true, wake: ciWake } };
 }
 
 function comment(text: string, stale = false): EnvelopeOf<'pr_comment'> {
@@ -65,8 +70,8 @@ function allGreen(): EnvelopeOf<'ci_all_required_green'> {
   });
 }
 
-function deploy(conclusion: string): EnvelopeOf<'deploy_workflow'> {
-  return envelopeOf('deploy_workflow', {
+function deploy(conclusion: string): EnvelopeOf<'workflow'> {
+  return envelopeOf('workflow', {
     headSha: 'a'.repeat(40), actorLogin: null,
     occurredAtIso: '2026-09-09T10:00:00.000Z', htmlUrl: null,
     workflowName: 'Ship It', workflowRunId: 9, runAttempt: 1,
@@ -74,8 +79,8 @@ function deploy(conclusion: string): EnvelopeOf<'deploy_workflow'> {
   });
 }
 
-function deployRunning(status: 'requested' | 'queued' | 'in_progress'): EnvelopeOf<'deploy_workflow'> {
-  return { ...deploy('success'), payload: { ...deploy('success').payload, state: { status } } } as EnvelopeOf<'deploy_workflow'>;
+function deployRunning(status: 'requested' | 'queued' | 'in_progress'): EnvelopeOf<'workflow'> {
+  return { ...deploy('success'), payload: { ...deploy('success').payload, state: { status } } } as EnvelopeOf<'workflow'>;
 }
 
 function review(): EnvelopeOf<'pr_review'> {
@@ -147,8 +152,8 @@ describe('worthWaking', () => {
     expect(worthWaking(deploy('success'), withDeploy('all'))).toBe(true);
   });
 
-  it('never wakes for a deploy workflow that is turned off, however green', () => {
-    const off = policy({ deployWorkflow: { enabled: false } });
+  it('never wakes for a workflow nobody is watching, however green', () => {
+    const off = policy({ workflows: new Map() });
     expect(worthWaking(deploy('success'), off)).toBe(false);
     expect(worthWaking(deploy('failure'), { ...off, checks: { enabled: true, wake: 'all' } })).toBe(false);
   });
@@ -162,7 +167,7 @@ describe('worthWaking', () => {
       { envelope: allGreen(), off: policy({ requiredChecks: { enabled: false } }) },
     ] as const;
     for (const { envelope, off } of cases) {
-      expect(worthWaking(envelope, policy({ deployWorkflow: { enabled: true } }))).toBe(true);
+      expect(worthWaking(envelope, watching('success'))).toBe(true);
       expect(worthWaking(envelope, off)).toBe(false);
     }
   });

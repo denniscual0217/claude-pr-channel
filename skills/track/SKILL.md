@@ -88,9 +88,11 @@ passing-check noise and other people's comments are filtered upstream.
   included: their findings are weighed like anyone else's.
 - **Failing check** — read the log, fix the cause, verify locally, commit, push.
 - **All required checks green** — carry on; mark a finished draft ready.
-- **Deploy workflow succeeded** — only if the operator configured one; it is the go-ahead
-  for work needing that build. Do not comment on it. A failed run never reaches you; it is
-  not yours to chase.
+- **A watched workflow ran** — only workflows the operator named reach you. A successful
+  run is the go-ahead for work needing what it builds; do not comment on it. A failed run
+  arrives only when the operator asked to hear about failures, so it is worth reading —
+  but a workflow can fail for reasons unrelated to this PR, and saying so is a better
+  answer than changing code to chase it.
 
 ## Replying
 

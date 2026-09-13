@@ -59,7 +59,7 @@ interface HarnessOptions {
   readonly headSha?: string | null;
   readonly ciEvents?: 'completed' | 'failures' | 'all';
   readonly policy?: Partial<DeliveryPolicy>;
-  readonly deployWorkflowName?: string | null;
+  readonly watchWorkflow?: string | null;
 }
 
 function harness(options: HarnessOptions = {}): Harness {
@@ -95,7 +95,7 @@ function harness(options: HarnessOptions = {}): Harness {
     },
     commentAuthors: null,
     botComments: 'handle',
-    deployWorkflowName: options.deployWorkflowName ?? null,
+    workflowNames: new Set(options.watchWorkflow === null || options.watchWorkflow === undefined ? [] : [options.watchWorkflow]),
     logger: (level, event, fields = {}) => logs.push({ level, event, fields }),
     onTerminal: (action) => terminals.push(action),
   });
@@ -153,15 +153,15 @@ describe('delivery into the session', () => {
 
   it('carries reviews, inline review comments and the configured deploy workflow through', async () => {
     const h = harness({
-      deployWorkflowName: FIXTURE_DEPLOY_WORKFLOW,
-      policy: { deployWorkflow: { enabled: true } },
+      watchWorkflow: FIXTURE_DEPLOY_WORKFLOW,
+      policy: { workflows: new Map([[FIXTURE_DEPLOY_WORKFLOW, 'success']]) },
     });
 
     await h.deliver('prReview');
     await h.deliver('prReviewComment');
-    await h.deliver('deployWorkflow');
+    await h.deliver('workflowRun');
 
-    expect(h.kinds()).toEqual(['pr_review', 'pr_review_comment', 'deploy_workflow']);
+    expect(h.kinds()).toEqual(['pr_review', 'pr_review_comment', 'workflow']);
     expect(h.pushed.at(-1)!.content).toContain(FIXTURE_DEPLOY_WORKFLOW);
     expect(h.pushed.every((event) => !event.stale)).toBe(true);
   });
@@ -171,16 +171,16 @@ describe('delivery into the session', () => {
   it('suppresses a failed or still-running deploy workflow even under ci_events all', async () => {
     const h = harness({
       ciEvents: 'all',
-      deployWorkflowName: FIXTURE_DEPLOY_WORKFLOW,
-      policy: { deployWorkflow: { enabled: true } },
+      watchWorkflow: FIXTURE_DEPLOY_WORKFLOW,
+      policy: { workflows: new Map([[FIXTURE_DEPLOY_WORKFLOW, 'success']]) },
     });
 
-    await h.deliver('deployWorkflow', {
+    await h.deliver('workflowRun', {
       mutate: (payload) => {
         (payload['workflow_run'] as Record<string, unknown>)['conclusion'] = 'failure';
       },
     });
-    await h.deliver('deployWorkflow', {
+    await h.deliver('workflowRun', {
       mutate: (payload) => {
         const run = payload['workflow_run'] as Record<string, unknown>;
         run['status'] = 'in_progress';
@@ -195,7 +195,7 @@ describe('delivery into the session', () => {
   it('makes no event at all from a workflow run while no workflow is configured', async () => {
     const h = harness();
 
-    await h.deliver('deployWorkflow');
+    await h.deliver('workflowRun');
 
     expect(h.pushed).toEqual([]);
     expect(h.pipeline.counters).toMatchObject({ received: 1, delivered: 0, suppressed: 0, unresolved_head: 0 });
@@ -274,8 +274,8 @@ describe('events for another PR in the same repo', () => {
 describe('head tracking through the pipeline', () => {
   it('never reports the current head green from checks for a superseded head', async () => {
     const h = harness({
-      deployWorkflowName: FIXTURE_DEPLOY_WORKFLOW,
-      policy: { deployWorkflow: { enabled: true } },
+      watchWorkflow: FIXTURE_DEPLOY_WORKFLOW,
+      policy: { workflows: new Map([[FIXTURE_DEPLOY_WORKFLOW, 'success']]) },
     });
 
     await h.deliver('checkLintGreen');
@@ -290,7 +290,7 @@ describe('head tracking through the pipeline', () => {
 
     // A late green for the head that was just superseded.
     await h.deliver('checkTestGreen', { mutate: onOldHead });
-    await h.deliver('deployWorkflow', { mutate: onOldHead });
+    await h.deliver('workflowRun', { mutate: onOldHead });
 
     const late = h.pushed.slice(afterPush);
     expect(late.length).toBeGreaterThan(0);

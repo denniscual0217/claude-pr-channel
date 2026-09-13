@@ -42,9 +42,9 @@ export interface NormalizeOptions {
   readonly commentAuthors?: ReadonlySet<string> | null;
   // Automated reviewers are handled by default; 'ignore' drops them.
   readonly botComments?: BotComments;
-  // The workflow whose run means something is built and deployable. Nothing is matched
-  // until one is configured: there is no default workflow name.
-  readonly deployWorkflowName?: string | null;
+  // Workflow names to watch, matched exactly and case-sensitively. Nothing is matched
+  // until one is configured: there is no workflow every repository has.
+  readonly workflowNames?: ReadonlySet<string> | null;
 }
 
 export function normalizeWebhook(eventName: string, payload: unknown, options: NormalizeOptions = {}): PrEvent | null {
@@ -307,16 +307,17 @@ function normalizeCheckSuite(ctx: Ctx): readonly PrEvent[] {
   }));
 }
 
-// One workflow, named in the config, matched exactly and case-sensitively. Every other
-// workflow run on the repository — including this one when no name is configured —
-// produces no event at all.
+// Workflows named in the config, matched exactly and case-sensitively. Every other
+// workflow run on the repository — including all of them when none is configured —
+// produces no event at all. Nothing here knows what a workflow does: the name is the
+// whole of the match, so a deploy, a docs publish and a benchmark are the same to it.
 function normalizeWorkflowRun(ctx: Ctx): readonly PrEvent[] {
-  const configured = ctx.options.deployWorkflowName ?? null;
-  if (configured === null) return [];
+  const configured = ctx.options.workflowNames ?? null;
+  if (configured === null || configured.size === 0) return [];
   const run = obj(ctx.body['workflow_run']);
   if (!run) return [];
   const name = str(run['name']) ?? str(obj(ctx.body['workflow'])?.['name']);
-  if (name !== configured) return [];
+  if (name === null || !configured.has(name)) return [];
   const headSha = str(run['head_sha']);
   const workflowRunId = num(run['id']);
   if (!headSha || workflowRunId === null) return [];
@@ -327,13 +328,13 @@ function normalizeWorkflowRun(ctx: Ctx): readonly PrEvent[] {
     actorLogin: loginOf(run['triggering_actor']) ?? loginOf(run['actor']) ?? ctx.actor,
     occurredAtIso: iso(run['updated_at'], run['run_started_at'], run['created_at']) ?? ctx.now(),
     htmlUrl: str(run['html_url']),
-    workflowName: configured,
+    workflowName: name,
     workflowRunId,
     runAttempt: num(run['run_attempt']) ?? 1,
     state,
   };
-  return prRefsForSha(ctx, run['pull_requests'], headSha, 'deploy_workflow').map((prRef) => ({
-    kind: 'deploy_workflow',
+  return prRefsForSha(ctx, run['pull_requests'], headSha, 'workflow').map((prRef) => ({
+    kind: 'workflow',
     prRef,
     ...base,
   }));

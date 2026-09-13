@@ -156,11 +156,11 @@ function body(envelope: EventEnvelope): string[] {
         ]),
       ];
 
-    case 'deploy_workflow':
+    case 'workflow':
       return [
         `Workflow "${event.workflowName}" on ${where} is ${describeState(event.state)} for head ${event.headSha} ` +
           `(run ${event.workflowRunId}, attempt ${event.runAttempt}).`,
-        deployGuidance(event.state, event.workflowName),
+        workflowGuidance(event.state, event.workflowName),
       ];
 
     case 'pr_lifecycle':
@@ -174,10 +174,12 @@ function body(envelope: EventEnvelope): string[] {
   }
 }
 
-// Only a successful run passes the filter, so this normally renders the go-ahead. The
-// other two cases stay honest rather than calling every non-success state a failure: a
-// run that has not finished is not one that failed.
-function deployGuidance(state: WorkflowRunState, workflowName: string): string {
+// What a run means depends on the workflow, which only the operator knows — so the
+// guidance leans on the fact that this one was configured to wake the session at all.
+// A failure only ever arrives when its wake value asked for it: under the default,
+// "success", the filter drops it long before here. Telling the session to ignore a
+// failure it was deliberately woken for would waste the turn it just spent.
+function workflowGuidance(state: WorkflowRunState, workflowName: string): string {
   if (state.status !== 'completed') {
     return [
       `The "${workflowName}" run has not finished, so there is nothing to act on yet.`,
@@ -187,15 +189,16 @@ function deployGuidance(state: WorkflowRunState, workflowName: string): string {
   if (state.conclusion === 'success') {
     return [
       'Its run for this head succeeded, so what it produces is ready.',
-      'If your work has a step that needs that build — verifying the change in the',
-      'deployed environment, for instance — this is the signal to do it now.',
-      'Otherwise carry on; no comment is expected for a build result.',
+      'If your work has a step that needs it — verifying the change in a built',
+      'environment, for instance — this is the signal to do it now.',
+      'Otherwise carry on; no comment is expected for a run that went green.',
     ].join('\n');
   }
   return [
-    `Do not chase this. A failed "${workflowName}" run is not this session's`,
-    'job, and it does not mean the code in this PR is wrong. Carry on with what you',
-    'were doing.',
+    `The "${workflowName}" run finished badly, and this session was configured to`,
+    'hear about that, so it is worth a look. Read the run before deciding: a workflow',
+    'can fail for reasons that have nothing to do with this PR, and if that is what',
+    'happened, say so rather than changing code to chase it.',
   ].join('\n');
 }
 

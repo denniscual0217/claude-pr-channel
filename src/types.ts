@@ -188,8 +188,8 @@ export interface CiAllRequiredGreenEvent extends PrEventBase {
   readonly checkNames: readonly string[];
 }
 
-export interface DeployWorkflowEvent extends PrEventBase {
-  readonly kind: 'deploy_workflow';
+export interface WorkflowEvent extends PrEventBase {
+  readonly kind: 'workflow';
   readonly headSha: string;
   // The configured workflow's name travels with the event, so the text sent to the model
   // reads naturally without reaching back into the config.
@@ -217,7 +217,7 @@ export type PrEvent =
   | PrReviewCommentEvent
   | CiCheckEvent
   | CiAllRequiredGreenEvent
-  | DeployWorkflowEvent
+  | WorkflowEvent
   | PrLifecycleEvent;
 
 export const PR_EVENT_KINDS = [
@@ -226,7 +226,7 @@ export const PR_EVENT_KINDS = [
   'pr_review_comment',
   'ci_check',
   'ci_all_required_green',
-  'deploy_workflow',
+  'workflow',
   'pr_lifecycle',
 ] as const satisfies readonly PrEvent['kind'][];
 export type PrEventKind = (typeof PR_EVENT_KINDS)[number];
@@ -238,7 +238,7 @@ export function isPositiveHeadSignal(event: PrEvent): boolean {
     case 'ci_all_required_green':
       return true;
     case 'ci_check':
-    case 'deploy_workflow':
+    case 'workflow':
       return isGreen(event.state);
     default:
       return false;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import type { CiAllRequiredGreenEvent, CiCheckEvent, PrEvent, PrLifecycleAction, PrRef, DeployWorkflowEvent } from '../types.js';
+import type { CiAllRequiredGreenEvent, CiCheckEvent, PrEvent, PrLifecycleAction, PrRef, WorkflowEvent } from '../types.js';
 import { isPositiveHeadSignal, untrusted } from '../types.js';
 import { HeadTracker } from './head.js';
 
@@ -35,9 +35,9 @@ function allGreen(headSha: string): CiAllRequiredGreenEvent {
   };
 }
 
-function deployReady(headSha: string): DeployWorkflowEvent {
+function deployReady(headSha: string): WorkflowEvent {
   return {
-    kind: 'deploy_workflow',
+    kind: 'workflow',
     prRef: pr,
     headSha,
     actorLogin: null,

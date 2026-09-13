@@ -34,7 +34,7 @@ export interface PipelineOptions {
   readonly policy: DeliveryPolicy;
   readonly commentAuthors: ReadonlySet<string> | null;
   readonly botComments: BotComments;
-  readonly deployWorkflowName: string | null;
+  readonly workflowNames: ReadonlySet<string>;
   readonly logger?: Logger;
   readonly now?: () => Date;
   // Called after the terminal event has been handed to the session, so tracking can stop.
@@ -95,7 +95,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       },
       commentAuthors: options.commentAuthors,
       botComments: options.botComments,
-      deployWorkflowName: options.deployWorkflowName,
+      workflowNames: options.workflowNames,
     });
 
     for (const event of events) {

@@ -303,7 +303,7 @@ export class Tracking {
       policy: settings.policy,
       commentAuthors: settings.commentAuthors,
       botComments: settings.botComments,
-      deployWorkflowName: settings.deployWorkflowName,
+      workflowNames: settings.workflowNames,
       logger: this.#log,
       now: this.#now,
       onTerminal: (action) => {
@@ -720,6 +720,7 @@ function filtersLine(settings: EffectiveSettings): string {
     `required_checks=[${settings.requiredChecks.join(', ')}] (${settings.origins.requiredChecks})`,
     `comment_authors=${authors} (${authorsOrigin})`,
     `bot_comments=${settings.botComments} (${settings.origins.botComments})`,
+    `workflows=[${[...settings.policy.workflows].map(([name, wake]) => `${name}:${wake}`).join(', ')}] (file)`,
   ].join(', ');
 }
 

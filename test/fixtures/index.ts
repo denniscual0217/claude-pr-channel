@@ -22,7 +22,7 @@ export const FIXTURES = {
   checkLintGreen: { file: 'check_run.completed.lint.json', event: 'check_run' },
   checkTestGreen: { file: 'check_run.completed.test.json', event: 'check_run' },
   checkTestFailed: { file: 'check_run.completed.test-failed.json', event: 'check_run' },
-  deployWorkflow: { file: 'workflow_run.completed.deploy.json', event: 'workflow_run' },
+  workflowRun: { file: 'workflow_run.completed.deploy.json', event: 'workflow_run' },
   prSynchronize: { file: 'pull_request.synchronize.json', event: 'pull_request' },
   prMerged: { file: 'pull_request.closed.merged.json', event: 'pull_request' },
 } as const satisfies Record<string, { file: string; event: GithubEventName }>;

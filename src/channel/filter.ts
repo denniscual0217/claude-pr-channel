@@ -7,6 +7,10 @@ import { isGreen } from '../types.js';
 //   all       every transition, including queued and in_progress
 export type CiEvents = 'failures' | 'completed' | 'all';
 
+// The same question for one watched workflow, which also has to answer "only when it
+// went green" — the case a deploy or image build cares about and a check never does.
+export type WorkflowWake = 'success' | 'failures' | 'completed' | 'all';
+
 // What this session has been told to wake for, resolved once per track from the config
 // file and the track arguments.
 export interface DeliveryPolicy {
@@ -15,7 +19,7 @@ export interface DeliveryPolicy {
   readonly reviewComments: boolean;
   readonly checks: { readonly enabled: boolean; readonly wake: CiEvents };
   readonly requiredChecks: { readonly enabled: boolean };
-  readonly deployWorkflow: { readonly enabled: boolean };
+  readonly workflows: ReadonlyMap<string, WorkflowWake>;
   readonly lifecycle: Readonly<Record<PrLifecycleAction, boolean>>;
 }
 
@@ -46,12 +50,18 @@ export function worthWaking(envelope: EventEnvelope, policy: DeliveryPolicy): bo
       return finishedBadly(event.state);
     case 'ci_all_required_green':
       return policy.requiredChecks.enabled;
-    // Only a successful run is worth a turn: it is the signal that work depending on what
-    // the workflow builds can start. A failed build of the deploy workflow is not this
-    // session's to chase and a queued one says nothing yet, so neither ever interrupts —
-    // checks.wake is about CI checks and does not widen this.
-    case 'deploy_workflow':
-      return policy.deployWorkflow.enabled && isGreen(event.state);
+    // Each watched workflow carries its own idea of what is worth a turn, because the
+    // answer depends on the job: a green image build is a go-ahead, while a failing
+    // benchmark is the only run worth hearing about. checks.wake is about CI checks and
+    // does not widen this. A workflow not named in the config never reaches here at all.
+    case 'workflow': {
+      const wake = policy.workflows.get(event.workflowName);
+      if (wake === undefined) return false;
+      if (wake === 'all') return true;
+      if (wake === 'completed') return event.state.status === 'completed';
+      if (wake === 'failures') return finishedBadly(event.state);
+      return isGreen(event.state);
+    }
     case 'pr_lifecycle':
       return policy.lifecycle[event.action];
   }

@@ -71,7 +71,7 @@
             },
             "wake": {
               "default": "completed",
-              "description": "Which CI transitions are worth a turn of the session: \"failures\" only the ones that finished badly, \"completed\" every finished check, \"all\" every transition including queued and in progress. It decides CI checks only; events.deployWorkflow is unaffected.",
+              "description": "Which CI transitions are worth a turn of the session: \"failures\" only the ones that finished badly, \"completed\" every finished check, \"all\" every transition including queued and in progress. It decides CI checks only; events.workflows is unaffected.",
               "type": "string",
               "enum": [
                 "failures",
@@ -103,26 +103,35 @@
           },
           "additionalProperties": false
         },
-        "deployWorkflow": {
-          "description": "A deploy or image-build workflow. Off until a name is configured; there is no default workflow.",
-          "default": {},
-          "type": "object",
-          "properties": {
-            "enabled": {
-              "default": false,
-              "description": "Deliver the result of one named GitHub Actions workflow whose successful run means what it builds is ready. Only a successful run wakes the session: a failed or still-running one never does, whatever events.checks.wake says.",
-              "type": "boolean"
+        "workflows": {
+          "default": [],
+          "description": "GitHub Actions workflows to watch by name, each with its own idea of what is worth waking for. An empty list watches none, which is the default: there is no workflow every repository has. Nothing here is deploy-specific — a workflow is matched by name alone, so this fits an image build, a docs publish or a nightly benchmark equally.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The workflow's name, matched exactly and case-sensitively against workflow_run.name — the name: at the top of the workflow file, not the filename."
+              },
+              "wake": {
+                "default": "success",
+                "description": "Which of its runs are worth a turn of the session: \"success\" only a run that finished green, \"failures\" only one that finished badly, \"completed\" either, \"all\" every transition including queued and in progress.",
+                "type": "string",
+                "enum": [
+                  "success",
+                  "failures",
+                  "completed",
+                  "all"
+                ]
+              }
             },
-            "workflowName": {
-              "default": null,
-              "description": "The workflow name to match, exactly and case-sensitively, against workflow_run.name. Required when enabled is true.",
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "additionalProperties": false
+            "required": [
+              "name"
+            ],
+            "additionalProperties": false
+          }
         },
         "lifecycle": {
           "description": "Pull request lifecycle actions, keyed by GitHub's own action names. An action not listed here needs code, not configuration.",

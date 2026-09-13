@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { z } from 'zod';
 import { ConfigSchema, NULLABLE_PATHS, TRACK_INPUT_KEYS, TrackInputSchema, configJsonSchema } from './config-schema.js';
-import type { CiEvents, DeliveryPolicy } from './channel/filter.js';
+import type { CiEvents, DeliveryPolicy, WorkflowWake } from './channel/filter.js';
 import type { TrackInput } from './channel/tracking.js';
 import type { BotComments } from './events/normalize.js';
 import type { PrLifecycleAction } from './types.js';
@@ -25,7 +25,7 @@ export interface Config {
     readonly reviewComments: { readonly enabled: boolean };
     readonly checks: { readonly enabled: boolean; readonly wake: CiEvents };
     readonly requiredChecks: { readonly enabled: boolean; readonly names: readonly string[] };
-    readonly deployWorkflow: { readonly enabled: boolean; readonly workflowName: string | null };
+    readonly workflows: readonly { readonly name: string; readonly wake: WorkflowWake }[];
     readonly lifecycle: Readonly<Record<PrLifecycleAction, boolean>>;
   };
   readonly authors: {
@@ -51,7 +51,7 @@ export const DEFAULT_CONFIG: Config = {
     reviewComments: { enabled: true },
     checks: { enabled: true, wake: 'completed' },
     requiredChecks: { enabled: true, names: [] },
-    deployWorkflow: { enabled: false, workflowName: null },
+    workflows: [],
     lifecycle: {
       opened: true,
       synchronize: true,
@@ -252,11 +252,21 @@ function explain(
           lines.push(`${label}: unknown key "${unknownKey}"; known keys: ${knownKeys(issue.path).join(', ')}`);
         }
         break;
+      // A string and a number are both "too small", and saying "expected an integer" about
+      // a blank name is a lie that sends the reader looking for the wrong mistake.
       case 'too_small':
-        lines.push(`${label}: ${show(valueAt(raw, issue.path))} is too small; expected an integer >= ${String(issue.minimum)}`);
+        lines.push(
+          issue.origin === 'string' || issue.origin === 'array'
+            ? `${label}: ${show(valueAt(raw, issue.path))} is too short; expected at least ${String(issue.minimum)} ${unit(issue.origin, issue.minimum)}`
+            : `${label}: ${show(valueAt(raw, issue.path))} is too small; expected an integer >= ${String(issue.minimum)}`,
+        );
         break;
       case 'too_big':
-        lines.push(`${label}: ${show(valueAt(raw, issue.path))} is too big; expected an integer <= ${String(issue.maximum)}`);
+        lines.push(
+          issue.origin === 'string' || issue.origin === 'array'
+            ? `${label}: ${show(valueAt(raw, issue.path))} is too long; expected at most ${String(issue.maximum)} ${unit(issue.origin, issue.maximum)}`
+            : `${label}: ${show(valueAt(raw, issue.path))} is too big; expected an integer <= ${String(issue.maximum)}`,
+        );
         break;
       case 'invalid_value':
         lines.push(`${label}: ${show(valueAt(raw, issue.path))} is not allowed; expected ${options(issue.values ?? [])}`);
@@ -274,6 +284,11 @@ function explain(
 function show(value: unknown): string {
   if (value === undefined) return 'nothing';
   return JSON.stringify(value) ?? String(value);
+}
+
+function unit(origin: string, count: unknown): string {
+  const noun = origin === 'array' ? 'item' : 'character';
+  return Number(count) === 1 ? noun : `${noun}s`;
 }
 
 function options(values: readonly unknown[]): string {
@@ -328,7 +343,7 @@ export interface EffectiveSettings {
   readonly commentAuthors: ReadonlySet<string> | null;
   readonly botComments: BotComments;
   readonly requiredChecks: readonly string[];
-  readonly deployWorkflowName: string | null;
+  readonly workflowNames: ReadonlySet<string>;
   readonly limits: Config['limits'];
   readonly cache: Config['cache'];
   readonly origins: {
@@ -374,13 +389,13 @@ export function resolveTracking(config: Config, input: TrackInput, ghLogin: stri
       reviewComments: events.reviewComments.enabled,
       checks: { enabled: events.checks.enabled, wake },
       requiredChecks: { enabled: events.requiredChecks.enabled },
-      deployWorkflow: { enabled: events.deployWorkflow.enabled },
+      workflows: new Map(events.workflows.map((entry) => [entry.name, entry.wake])),
       lifecycle: events.lifecycle,
     },
     commentAuthors: resolveCommentAuthors(config, input.comment_authors, ghLogin),
     botComments,
     requiredChecks,
-    deployWorkflowName: events.deployWorkflow.enabled ? events.deployWorkflow.workflowName : null,
+    workflowNames: new Set(events.workflows.map((entry) => entry.name)),
     limits: config.limits,
     cache: config.cache,
     origins: {
