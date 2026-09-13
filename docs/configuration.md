@@ -1,7 +1,6 @@
 # Configuring the channel
 
-The README documents every setting. This is the short version: the things people
-actually change, and the line of JSON that changes them.
+Every setting, what each one does, and the JSON for the things people actually change.
 
 ## The file
 
@@ -17,8 +16,9 @@ bun run config
 ```
 
 The editor builds its form from the same schema the plugin validates against, has a
-Raw JSON tab, and saves through the plugin's own loader — so it cannot write a file
-the plugin would then refuse.
+Raw JSON tab, and saves through the plugin's own loader — so it cannot write a file the
+plugin would then refuse. Writes go through a temporary file and a rename, so an
+interrupted save leaves the previous config intact.
 
 ### Editing from another device
 

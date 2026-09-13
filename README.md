@@ -56,27 +56,6 @@ Behind those, the channel server exposes three tools:
 `bot_comments` and `replace`. The four filters override the matching keys in the
 [config file](#configuration) for that one PR.
 
-## Editing the configuration
-
-The file is plain JSON and meant to be edited by hand. There is also a local editor:
-
-```
-bun run config
-```
-
-It serves a form on `127.0.0.1`, generated from the same schema the plugin validates
-against, plus a **Raw JSON** tab. Saving goes through the plugin's own loader, so the
-editor cannot write a file the plugin would then refuse, and through a temporary file and
-a rename, so an interrupted save leaves the previous config intact.
-
-`PR_CHANNEL_UI_HOST` binds a different address — a VPN one, to edit from another device.
-`0.0.0.0` is refused: the editor has no authentication. `PR_CHANNEL_UI_PORT` moves the
-port from 4319. Started by hand it dies with its shell, so run it under a service manager
-if you want it to survive a reboot.
-
-Changes apply when a channel next starts. A session already tracking keeps the settings it
-began with.
-
 ## Security
 
 Read this before pointing it at a repository you care about.
@@ -121,11 +100,17 @@ One JSON file, at `${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json`.
 Every key is optional, `{}` is valid, and a missing file just means the defaults.
 
 By default the plugin delivers comments, reviews and the main lifecycle actions, and no
-CI at all — name the workflows you want under `events.workflows`. `bun run config` opens
-an editor for the file.
+CI at all — name the workflows you want under `events.workflows`.
+
+It is plain JSON and meant to be edited by hand. There is also a local editor:
+
+```
+bun run config
+```
 
 An invalid file is never fallen back from: `track` refuses until it is fixed, naming the
-key, what was wrong and what was expected.
+key, what was wrong and what was expected. Changes apply when a channel next starts; a
+session already tracking keeps the settings it began with.
 
 **[docs/configuration.md](docs/configuration.md) is the manual** — every setting, what
 each one delivers, and the JSON for the things people actually change.
