@@ -9,7 +9,7 @@ const root = join(import.meta.dir, '..');
 // the fixtures use a neutral placeholder.
 const BANNED = /temploy|toptal/i;
 
-const SEARCHED = ['README.md', 'skills', 'src', 'test', 'schema'];
+const SEARCHED = ['README.md', 'docs', 'skills', 'src', 'test', 'schema'];
 
 // The guard names the terms it bans, so it is the one file that cannot be scanned.
 const SELF = relative(root, import.meta.path);
