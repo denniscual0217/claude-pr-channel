@@ -181,6 +181,11 @@ async function main(): Promise<void> {
   });
   process.stdin.on('end', () => void finish('stdin_end'));
   process.stdin.on('close', () => void finish('stdin_close'));
+
+  // Emitted once the signal handlers and the stdin reader are both installed. Until this
+  // line a SIGHUP still takes the default action and kills the cleanup it was meant to
+  // survive, so anything that signals the janitor should wait for it rather than sleep.
+  log('janitor_ready', { pid: process.pid });
   process.stdin.resume();
 }
 

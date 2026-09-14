@@ -108,6 +108,30 @@ async function until(condition: () => boolean, timeoutMs = 8_000): Promise<boole
   return condition();
 }
 
+// The janitor announces itself once its signal handlers are installed. Sleeping instead
+// races its own startup: a SIGHUP that lands first takes the default action and kills the
+// process the test is about to assert survived.
+interface JanitorLog {
+  waitFor(event: string): Promise<void>;
+  cancel(): Promise<void>;
+}
+
+function logOf(child: { stderr: unknown }): JanitorLog {
+  const reader = (child.stderr as ReadableStream<Uint8Array>).getReader();
+  const decoder = new TextDecoder();
+  let seen = '';
+  return {
+    async waitFor(event: string): Promise<void> {
+      while (!seen.includes(event)) {
+        const { done, value } = await reader.read();
+        if (done) throw new Error(`janitor exited before ${event}: ${seen}`);
+        seen += decoder.decode(value, { stream: true });
+      }
+    },
+    cancel: () => reader.cancel(),
+  };
+}
+
 const hookGone = (): boolean => hookIds().length === 0;
 const hookIds = (): number[] => (((fake.state()['hooks'] as { id: number }[]) ?? []).map((hook) => hook.id));
 
@@ -176,15 +200,16 @@ describe('the janitor', () => {
       env: { ...process.env },
       stdin: 'pipe',
       stdout: 'ignore',
-      stderr: 'inherit',
+      stderr: 'pipe',
     });
     spawned.push(child);
     child.stdin.write(`${JSON.stringify({ repo: REPO, marker: markerPath, hookId: 11 })}\n`);
     child.stdin.flush();
-    await Bun.sleep(300);
+    const janitorLog = logOf(child);
+    await janitorLog.waitFor('janitor_ready');
 
     child.kill('SIGHUP');
-    await Bun.sleep(300);
+    await janitorLog.waitFor('janitor_signal_ignored');
     expect(processInfo(child.pid)).not.toBeNull();
     expect(hookGone()).toBe(false);
 
@@ -220,11 +245,11 @@ describe('the janitor', () => {
     spawned.push(child);
     child.stdin.write(`${JSON.stringify({ repo: REPO, marker: markerPath, hookId: 11 })}\n`);
     child.stdin.flush();
-    await Bun.sleep(200);
-    await (child.stderr as ReadableStream<Uint8Array>).cancel();
+    const janitorLog = logOf(child);
+    await janitorLog.waitFor('janitor_ready');
+    await janitorLog.cancel();
 
     child.kill('SIGHUP');
-    await Bun.sleep(200);
     child.stdin.end();
 
     expect(await until(hookGone)).toBe(true);
