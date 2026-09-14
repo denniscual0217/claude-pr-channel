@@ -6,31 +6,49 @@ CI goes red — the session reads the failing job, fixes the cause, pushes, and 
 goes green. A reviewer leaves an inline comment — it answers in that thread. No more
 babysitting the pull request; the plugin does it for you.
 
-## Install
+## Installing
 
-Requires [Bun](https://bun.sh), the [GitHub CLI](https://cli.github.com) authenticated as
-a user with **admin** on the repository, and its webhook extension:
+You need [Bun](https://bun.sh) and the [GitHub CLI](https://cli.github.com), authenticated
+as someone with **admin** on the repository — creating a webhook requires it. Add the
+webhook extension:
 
 ```
 gh extension install cli/gh-webhook
 ```
 
-Launch a session with the plugin and the development-channels flag. A private plugin is
-not on the approved channels allowlist, so `--channels` alone will not load it:
+Then install the plugin. Once per machine:
 
 ```
-# once per machine
 claude plugin marketplace add /path/to/claude-pr-channel
 claude plugin install pr-channel@pr-channel-local
+```
 
-# per session, in the PR's worktree
+## Starting a session
+
+Launch from the PR's worktree, and ask for the plugin's channel:
+
+```
 claude --dangerously-load-development-channels plugin:pr-channel@pr-channel-local
 ```
 
-The session's banner should mention `messages from server:pr-channel inject directly in
-this session`. Without that line, nothing will ever arrive.
+The flag is needed because a plugin installed from a local directory is not on the
+approved channels allowlist. The banner should say `messages from server:pr-channel inject
+directly in this session` — without that line, nothing will ever arrive.
 
-## Use
+## Resuming a session
+
+A channel belongs to the process that opened it, so resuming needs the same flag as
+starting. Pass it alongside `--resume`:
+
+```
+claude --resume <session-id> --dangerously-load-development-channels plugin:pr-channel@pr-channel-local
+```
+
+Resuming restores the conversation, not the tracking: the webhook was deleted when the
+previous process exited. Run `/pr-channel:track` again to start receiving events. Drop the
+channel flag and the session still resumes, but nothing will ever reach it.
+
+## Tracking a PR
 
 The plugin's skills are namespaced by its name:
 
