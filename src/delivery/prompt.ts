@@ -33,41 +33,38 @@ const REPLY_PREFIX = '**Claude:** ';
 function respond(lines: readonly string[]): string {
   return [
     // The author reads the PR, not the terminal, so anything asked here waits forever.
-    'Act on this yourself. Nobody is watching the terminal, so do not ask for ' +
-      'confirmation: make the change, run the tests, commit, and push to this PR\'s ' +
-      'branch.',
-    'If it is a judgement call — behaviour beyond what was asked, a weakened test, a ' +
-      'workaround, a dependency or CI change, anything a reasonable person might have ' +
-      'decided differently — still decide it yourself, then say plainly in your PR ' +
-      'comment what you did and what you were unsure about. Flag it, do not wait on it.',
-    'Never do these unattended, however right they look: pushing anywhere but this ' +
-      'PR\'s branch, force-pushing or rewriting published history, merging or closing ' +
-      'the PR, deleting branches, changing repository settings, or touching credentials. ' +
-      'Raise those on the PR and leave them to the author.',
+    'Act on this yourself, now. Nobody is watching the terminal: make the change, run ' +
+      'the tests, commit, push to this PR\'s branch. Never ask for confirmation, and ' +
+      'never stop to report that you are about to start.',
+    'Judgement calls are yours too — behaviour beyond what was asked, a weakened test, ' +
+      'a workaround, a dependency or CI change. Decide, then say in your comment what ' +
+      'you did and what you were unsure about. Flag it, do not wait on it.',
+    // The tier between "just decide it" and the forbidden list: real enough that guessing
+    // would waste the work, not dangerous enough to be banned outright.
+    'The exception is a decision only the author can make — a product call, a tradeoff ' +
+      'with no right answer, anything that changes what the PR is meant to do rather ' +
+      'than how it does it. Do not handle those. Post a comment on the PR saying what ' +
+      'the decision is, the options, and which you would pick, and leave it to them.',
+    'Either way you are never blocked: act, or post the question and move on to the ' +
+      'next thing. Never hold the turn open waiting for an answer that is not coming.',
+    'Never unattended, however right it looks: pushing anywhere but this PR\'s branch, ' +
+      'force-pushing, rewriting published history, merging or closing the PR, deleting ' +
+      'branches, changing repository settings, touching credentials. Raise those on the ' +
+      'PR and leave them to the author.',
     'Respond now, without waiting to be asked:',
     ...lines.map((line) => `- ${line}`),
-    `- Every comment you post on GitHub must begin with ${REPLY_PREFIX.trim()} in bold, exactly as shown.`,
-    '- Post exactly one comment, in one place. Never post the same answer both in a ' +
-      'thread and at the top level.',
-    '- Answer where the event came from. An inline review comment is answered in its ' +
-      'own thread; every other event — a conversation comment, a review, a CI or build ' +
-      'result, a lifecycle change — is answered at the top level with "gh pr comment". ' +
-      'Never answer an event inside an inline thread it did not come from: a build ' +
-      'result pinned to someone else\'s line comment is buried where nobody looks for it.',
-    '- If there is nothing to change and nothing you were actually asked, post nothing ' +
-      'at all and simply carry on. Never post a comment whose content is that you have ' +
-      'nothing to say, that a review carried no feedback, or that you already did the ' +
-      'work earlier. Silence is the correct response to a notification.',
-    '- Link only a URL this event gave you, exactly as written. If this event gave you ' +
-      'no URL, link nothing at all — never invent one, never reconstruct one from a PR ' +
-      'or comment number, and never carry one over from an earlier event. A confident ' +
-      'link to the wrong comment is worse than no link.',
-    '- Write for a reviewer, not a log: lead with the outcome and anything they must ' +
-      'decide. Leave out the mechanics — commands you ran, files you opened, what you ' +
-      'tried first, how you diagnosed it — unless they ask or the explanation needs it.',
-    '- Concise and precise: answer what was asked and stop. No preamble, no restating ' +
-      'their comment back, no summary of work visible in the diff. Go longer only for a ' +
-      'thorough explanation they asked for, or a caveat they need.',
+    `- Begin every comment with ${REPLY_PREFIX.trim()} in bold, exactly as shown.`,
+    '- One comment, in one place: an inline review comment is answered in its own ' +
+      'thread, everything else at the top level with "gh pr comment". Never post the ' +
+      'same answer twice, and never answer an event inside a thread it did not come from.',
+    '- Nothing to change and nothing asked of you? Post nothing and carry on. Never ' +
+      'post a comment whose content is that you have nothing to say.',
+    '- Link only a URL this event gave you, verbatim. No URL given, no link: never ' +
+      'invent one, rebuild one from a number, or reuse one from an earlier event.',
+    '- Write for a reviewer, not a log: the outcome and anything they must decide. No ' +
+      'preamble, no restating their comment, no mechanics — what you ran, what you ' +
+      'opened, what you tried first. Answer, then stop. Go longer only for a thorough ' +
+      'explanation they asked for, or a caveat they need.',
   ].join('\n');
 }
 
@@ -150,7 +147,26 @@ function body(envelope: EventEnvelope): string[] {
       return [
         `Workflow "${event.workflowName}" on ${where} is ${describeState(event.state)} for head ${event.headSha} ` +
           `(run ${event.workflowRunId}, attempt ${event.runAttempt}).`,
-        workflowGuidance(event.state, event.workflowName),
+        ...(event.state.status !== 'completed'
+          ? [`The "${event.workflowName}" run has not finished, so there is nothing to act on yet. Carry on with what you were doing.`]
+          : needsAttention(event.state)
+            ? [
+                respond([
+                  `Read the run first: gh run view ${event.workflowRunId} --repo ${repo} --log-failed`,
+                  'Fix the cause, confirm it passes locally, then commit and push.',
+                  `Report what you changed as a TOP-LEVEL comment: ${conversationReply(event.prRef)}`,
+                  ...linkBack(event.htmlUrl),
+                  'A workflow can fail for reasons unrelated to this PR. If that is what ' +
+                    'happened, say so in that comment rather than changing code to chase it — ' +
+                    'but decide which it is yourself, do not wait to be told.',
+                ]),
+              ]
+            : [
+                'Its run for this head succeeded, so what it produces is ready. If your work ' +
+                  'has a step that needs it — verifying the change in a built environment, for ' +
+                  'instance — this is the signal to do it now. Otherwise carry on; no comment ' +
+                  'is expected for a run that went green.',
+              ]),
       ];
 
     case 'pr_lifecycle':
@@ -162,34 +178,6 @@ function body(envelope: EventEnvelope): string[] {
         'No reply is expected for a lifecycle change; carry on with your current step.',
       ];
   }
-}
-
-// What a run means depends on the workflow, which only the operator knows — so the
-// guidance leans on the fact that this one was configured to wake the session at all.
-// A failure only ever arrives when its wake value asked for it: under the default,
-// "success", the filter drops it long before here. Telling the session to ignore a
-// failure it was deliberately woken for would waste the turn it just spent.
-function workflowGuidance(state: WorkflowRunState, workflowName: string): string {
-  if (state.status !== 'completed') {
-    return [
-      `The "${workflowName}" run has not finished, so there is nothing to act on yet.`,
-      'Carry on with what you were doing.',
-    ].join('\n');
-  }
-  if (state.conclusion === 'success') {
-    return [
-      'Its run for this head succeeded, so what it produces is ready.',
-      'If your work has a step that needs it — verifying the change in a built',
-      'environment, for instance — this is the signal to do it now.',
-      'Otherwise carry on; no comment is expected for a run that went green.',
-    ].join('\n');
-  }
-  return [
-    `The "${workflowName}" run finished badly, and this session was configured to`,
-    'hear about that, so it is worth a look. Read the run before deciding: a workflow',
-    'can fail for reasons that have nothing to do with this PR, and if that is what',
-    'happened, say so rather than changing code to chase it.',
-  ].join('\n');
 }
 
 export function renderEventPrompt(envelope: EventEnvelope): string {

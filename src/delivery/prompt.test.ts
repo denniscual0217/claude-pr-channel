@@ -55,7 +55,7 @@ describe('renderEventPrompt', () => {
     expect(comment).toContain('--body "**Claude:** <your reply>"');
     expect(review).toContain('-f body="**Claude:** <your reply>"');
     for (const prompt of [comment, review]) {
-      expect(prompt).toContain('must begin with **Claude:** in bold');
+      expect(prompt).toContain('Begin every comment with **Claude:** in bold');
     }
   });
 
@@ -93,9 +93,9 @@ describe('renderEventPrompt', () => {
       envelope('pr_comment', { action: 'created', commentId: 7, untrustedBody: untrusted('fyi') }),
     );
 
-    expect(prompt).toContain('post nothing');
-    expect(prompt).toContain('Silence is the correct response');
-    expect(prompt).toContain('Never post the same answer both in a thread and at the top level');
+    expect(prompt).toContain('Post nothing and carry on');
+    expect(prompt).toContain('Never post a comment whose content is that you have nothing to say');
+    expect(prompt).toContain('Never post the same answer twice');
   });
 
   // A build result pinned to someone's line comment is buried where nobody looks. A
@@ -112,7 +112,7 @@ describe('renderEventPrompt', () => {
 
     expect(prompt).toContain('TOP-LEVEL comment');
     expect(prompt).toContain('gh pr comment 42 --repo acme-labs/widget-service');
-    expect(prompt).toContain('Never answer an event inside an inline thread it did not come from');
+    expect(prompt).toContain('never answer an event inside a thread it did not come from');
     expect(prompt).not.toContain('IN THE THREAD ONLY');
   });
 
@@ -121,11 +121,11 @@ describe('renderEventPrompt', () => {
       envelope('pr_comment', { action: 'created', commentId: 7, untrustedBody: untrusted('why?') }),
     );
 
-    expect(prompt).toContain('Concise and precise');
+    expect(prompt).toContain('Answer, then stop');
     expect(prompt).toContain('No preamble');
     // A reviewer wants the outcome, not a transcript of how it was reached.
     expect(prompt).toContain('Write for a reviewer, not a log');
-    expect(prompt).toContain('Leave out the mechanics');
+    expect(prompt).toContain('no mechanics');
     // Concise is the default, not a cap: a thorough answer is still allowed when asked
     // for, or when brevity would drop a caveat the reader needs.
     expect(prompt).toContain('Go longer only for a thorough explanation they asked for');
@@ -164,8 +164,8 @@ describe('renderEventPrompt', () => {
       }),
     );
 
-    expect(prompt).toContain('link nothing at all');
-    expect(prompt).toContain('never carry one over from an earlier event');
+    expect(prompt).toContain('No URL given, no link');
+    expect(prompt).toContain('reuse one from an earlier event');
   });
 
   it('pins a top-level link to the exact URL the event carried', () => {
@@ -223,7 +223,9 @@ describe('renderEventPrompt', () => {
 
   // A failure only reaches the prompt when its wake value asked for it, so the guidance
   // must not tell the session to ignore the very thing it was woken for.
-  it('asks the session to look at a failed workflow it was configured to hear about', () => {
+  // A failed workflow used to be prose telling the session it was "worth a look", which
+  // left it waiting to be told to act. It now carries the same block as every other event.
+  it('tells the session to fix a failed workflow itself, not to wait', () => {
     const prompt = renderEventPrompt(
       envelope('workflow', {
         workflowName: 'Ship It', workflowRunId: 9, runAttempt: 1,
@@ -232,8 +234,10 @@ describe('renderEventPrompt', () => {
     );
 
     expect(prompt).toContain('Workflow "Ship It"');
-    expect(prompt).toContain('configured to');
-    expect(prompt).toContain('worth a look');
+    expect(prompt).toContain('Act on this yourself, now');
+    expect(prompt).toContain('Never ask for confirmation');
+    expect(prompt).toContain('gh run view 9 --repo acme-labs/widget-service --log-failed');
+    expect(prompt).toContain('unrelated to this PR');
     expect(prompt).not.toContain('Do not chase this');
   });
 
@@ -324,7 +328,7 @@ describe('unattended work', () => {
     );
 
     expect(prompt).toContain('Nobody is watching the terminal');
-    expect(prompt).toContain('do not ask for confirmation');
+    expect(prompt).toContain('Never ask for confirmation');
     // A judgement call is acted on and flagged, not queued behind a question.
     expect(prompt).toContain('Flag it, do not wait on it');
   });
