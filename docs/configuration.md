@@ -43,63 +43,27 @@ which neither the editor nor the plugin can say where the configuration file liv
 
 ## Recipes
 
-**Let a teammate's comments drive the session.** By default only your own do — acting
-on a comment means pushing code. Naming people replaces that default, so include
-yourself.
+**Let a teammate's comments drive the session.** By default only your own do — acting on a
+comment means pushing code. Naming people replaces that default, so include yourself.
 
 ```json
 { "authors": { "mode": "listed", "allow": ["your-login", "a-colleague"] } }
 ```
 
-**Stop an automated reviewer talking to the session.** CodeRabbit and friends are
-handled by default, because their findings are real review feedback.
+**Stop an automated reviewer talking to the session.** CodeRabbit and friends are handled
+by default, because their findings are real review feedback.
 
 ```json
 { "authors": { "bots": "ignore" } }
 ```
 
-**Track CI.** Name the workflows you care about. None are watched by default, and
-nothing here is deploy-specific — a workflow is matched by name alone, so this fits a
-lint run, an image build or a nightly benchmark equally. The name must match the
-workflow's `name:` exactly, case included, and each entry decides for itself what is
-worth waking for.
+**Track CI.** Name the workflows you care about — see [Workflows](#workflows).
 
 ```json
-{
-  "events": {
-    "workflows": [
-      { "name": "Build Image", "wake": "success" },
-      { "name": "Nightly Bench", "wake": "failures" }
-    ]
-  }
-}
+{ "events": { "workflows": [{ "name": "Typecheck", "wake": "failures" }] } }
 ```
 
-`wake` is `success` (the default — only a run that finished green, the right answer for
-a build whose failure is not this PR's problem), `failures`, `completed` or `all`. An
-empty list watches nothing, so there is no separate on/off switch to contradict it.
-
-Use the workflow's name, not the job's. In a repository where `.github/workflows/lint.yml`
-opens with `name: Lint` and its job is called `Check:Lint`, the entry is `Lint`. A
-workflow whose jobs are a matrix is still one entry: the run finishes once however many
-shards it fans out to, which is the point — naming shards means editing this file every
-time the shard count changes.
-
-**Track CI that is not GitHub Actions.** CircleCI, Buildkite and apps that post their own
-result emit no workflow to name, so they are invisible to the list above. `checks` covers
-them, at the cost of being all of them or none — there is no way to name one:
-
-```json
-{ "events": { "checks": { "enabled": true, "wake": "failures" } } }
-```
-
-It is off by default because on a repository with twenty checks it is twenty
-interruptions per push, and because every GitHub Actions job also reports as a check —
-so turning it on alongside a workflow list wakes the session twice for one failure.
-
-**Track labels, or any other lifecycle action.** All 22 pull-request actions are
-individually switchable. Seven are on by default: opened, synchronize,
-ready_for_review, converted_to_draft, reopened, closed, merged.
+**Hear about labels.** Or any of the other lifecycle actions that are off by default.
 
 ```json
 { "events": { "lifecycle": { "labeled": true, "review_requested": true } } }
@@ -111,6 +75,94 @@ verified and deduplicated, it simply never interrupts.
 ```json
 { "events": { "reviewComments": { "enabled": false } } }
 ```
+
+## Every event
+
+What the plugin can deliver, and what decides it.
+
+| event | delivered by default | key |
+| --- | --- | --- |
+| Conversation comment | yes | `events.comments.enabled` |
+| Review with a body | yes | `events.reviews.enabled` |
+| Inline review comment | yes | `events.reviewComments.enabled` |
+| A named workflow's run | no — none are named | `events.workflows` |
+| Every CI check, unnamed | no | `events.checks.enabled` |
+| Pull request lifecycle | seven of 22 actions | `events.lifecycle.<action>` |
+
+Comments and reviews are also filtered by who wrote them — see `authors` below.
+
+### Workflows
+
+`events.workflows` names GitHub Actions workflows to watch. Nothing about it is
+deploy-specific: a workflow is matched by name alone, so the same key fits a lint run, an
+image build or a nightly benchmark.
+
+```json
+{
+  "events": {
+    "workflows": [
+      { "name": "Typecheck", "wake": "failures" },
+      { "name": "Unit Tests", "wake": "failures" },
+      { "name": "Build Image", "wake": "success" }
+    ]
+  }
+}
+```
+
+`name` is the **workflow's** `name:`, the line at the top of the `.yml` — not the job's.
+In a repository where `.github/workflows/lint.yml` opens with `name: Lint` and its job is
+called `Check:Lint`, the entry is `Lint`. Matching is exact and case-sensitive.
+
+A workflow whose jobs are a matrix is still one entry: the run finishes once however many
+shards it fans out to. That is the point — naming shards means editing this file every
+time the shard count changes.
+
+`wake` decides which of its runs are worth a turn:
+
+| `wake` | wakes on |
+| --- | --- |
+| `success` (default) | only a run that finished green — the answer for a build whose failure is not this PR's problem |
+| `failures` | only a run that finished badly |
+| `completed` | either |
+| `all` | every transition, including queued and in progress |
+
+An empty list watches nothing, so there is no separate on/off switch to contradict it.
+
+### Lifecycle actions
+
+All 22 of GitHub's pull-request actions are individually switchable under
+`events.lifecycle`. Seven are on:
+
+`opened`, `synchronize` (new commits pushed), `ready_for_review`, `converted_to_draft`,
+`reopened`, `closed`, `merged`.
+
+Fifteen are off:
+
+`labeled`, `unlabeled`, `assigned`, `unassigned`, `review_requested`,
+`review_request_removed`, `edited`, `milestoned`, `demilestoned`, `locked`, `unlocked`,
+`auto_merge_enabled`, `auto_merge_disabled`, `enqueued`, `dequeued`.
+
+```json
+{ "events": { "lifecycle": { "labeled": true, "review_requested": true } } }
+```
+
+`closed` and `merged` end tracking whether or not they are delivered; the switch only
+decides whether the session is told. The label, assignee, reviewer or milestone an action
+names is delivered as untrusted text.
+
+### CI that is not GitHub Actions
+
+CircleCI, Buildkite and apps that post their own result emit no workflow to name, so
+`events.workflows` cannot see them. `events.checks` covers every check on the PR, at the
+cost of being all of them or none — there is no way to name one:
+
+```json
+{ "events": { "checks": { "enabled": true, "wake": "failures" } } }
+```
+
+It is off by default because on a repository with twenty checks it is twenty
+interruptions per push, and because every GitHub Actions job also reports as a check — so
+turning it on alongside a workflow list wakes the session twice for one failure.
 
 ## What beats what
 

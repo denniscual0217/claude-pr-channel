@@ -32,8 +32,7 @@ claude --dangerously-load-development-channels plugin:pr-channel@pr-channel-loca
 ```
 
 The flag is needed because a plugin installed from a local directory is not on the
-approved channels allowlist. The banner should say `messages from server:pr-channel inject
-directly in this session` — without that line, nothing will ever arrive.
+approved channels allowlist.
 
 That is a lot to type per session. A shell function keeps it short and still takes the
 usual flags, because the channel argument stays last:
@@ -124,29 +123,37 @@ machine you share with people you would not trust with that repository**.
 
 ## Configuration
 
-One JSON file, at `${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json`.
-Every key is optional, `{}` is valid, and a missing file just means the defaults.
+No CI is delivered until you name the workflows you want. Comments, reviews and the main
+lifecycle actions are on by default.
 
-By default the plugin delivers comments, reviews and the main lifecycle actions, and no
-CI at all — name the workflows you want under `events.workflows`.
+Put this at `${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json`:
 
-It is plain JSON and meant to be edited by hand. There is also a local editor:
+```json
+{
+  "events": {
+    "workflows": [
+      { "name": "Typecheck", "wake": "failures" },
+      { "name": "Unit Tests", "wake": "failures" },
+      { "name": "Build Image", "wake": "success" }
+    ]
+  }
+}
+```
+
+`name` is the workflow's own `name:`, not a job's. `wake` is `failures`, `success`,
+`completed` or `all`. Every key is optional and `{}` is a valid file.
+
+Or edit it in a browser:
 
 ```
 bun run config
 ```
 
-An invalid file is never fallen back from: `track` refuses until it is fixed, naming the
-key, what was wrong and what was expected.
+Changes take hold at the next `track` — `/pr-channel:untrack` then `/pr-channel:track`,
+same session, no restart.
 
-**Editing the config does not need a new session.** It is read when `track` runs, so
-`/pr-channel:untrack` then `/pr-channel:track` in the same session is enough. Nothing is
-re-read while a session is tracking, so the edit takes hold at that point and not before.
-Only a change to the plugin's own code needs a restart, because the server loads it once
-at startup.
-
-**[docs/configuration.md](docs/configuration.md) is the manual** — every setting, what
-each one delivers, and the JSON for the things people actually change.
+**[docs/configuration.md](docs/configuration.md)** has every setting: the other events you
+can turn on, whose comments are acted on, and how to watch CI that is not GitHub Actions.
 
 ## Supported OS
 
