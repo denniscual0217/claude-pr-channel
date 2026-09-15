@@ -35,6 +35,20 @@ The flag is needed because a plugin installed from a local directory is not on t
 approved channels allowlist. The banner should say `messages from server:pr-channel inject
 directly in this session` — without that line, nothing will ever arrive.
 
+That is a lot to type per session. A shell function keeps it short and still takes the
+usual flags, because the channel argument stays last:
+
+```sh
+# ~/.bashrc or ~/.zshrc
+claude-pr() {
+  claude "$@" --dangerously-load-development-channels plugin:pr-channel@pr-channel-local
+}
+```
+
+Then `claude-pr` starts a session, and `claude-pr --resume <session-id>` resumes one. An
+`alias` will not do: it can only append, and the channel argument has to come after your
+own flags.
+
 ## Resuming a session
 
 A channel belongs to the process that opened it, so resuming needs the same flag as
@@ -43,6 +57,8 @@ starting. Pass it alongside `--resume`:
 ```
 claude --resume <session-id> --dangerously-load-development-channels plugin:pr-channel@pr-channel-local
 ```
+
+or `claude-pr --resume <session-id>` with the function above.
 
 Resuming restores the conversation, not the tracking: the webhook was deleted when the
 previous process exited. Run `/pr-channel:track` again to start receiving events. Drop the
