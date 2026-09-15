@@ -1,0 +1,57 @@
+# Bun runs TypeScript without checking it, so the typecheck is a separate job rather than
+# something `bun test` would have caught. It is also what keeps the switches over event
+# kinds exhaustive: they have no default, so a new kind fails to compile until every one
+# of them handles it, while the tests stay green either way.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+
+  test:
+    # The suite spawns processes, signals them and reads their start time out of ps, so it
+    # is worth running on both supported systems rather than trusting one.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun test
+
+  schema:
+    # The committed JSON Schema is generated from src/config-schema.ts; a stale one would
+    # hand the config editor a form for settings the plugin no longer has.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run schema
+      - run: git diff --exit-code schema/config.schema.json
