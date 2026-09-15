@@ -37,7 +37,7 @@ describe('renderEventPrompt', () => {
     const prompt = renderEventPrompt(event);
 
     expect(prompt).toContain('gh pr comment 42 --repo acme-labs/widget-service');
-    expect(prompt).toContain('Respond now, without waiting to be asked');
+    expect(prompt).toContain('Never block. Either act, or post and move on.');
     expect(prompt).toContain('commit and push');
   });
 
@@ -55,7 +55,7 @@ describe('renderEventPrompt', () => {
     expect(comment).toContain('--body "**Claude:** <your reply>"');
     expect(review).toContain('-f body="**Claude:** <your reply>"');
     for (const prompt of [comment, review]) {
-      expect(prompt).toContain('Begin every comment with **Claude:** in bold');
+      expect(prompt).toContain('Start every comment with **Claude:**, in bold');
     }
   });
 
@@ -85,7 +85,7 @@ describe('renderEventPrompt', () => {
     );
 
     expect(prompt).toContain('IN THE THREAD ONLY');
-    expect(prompt).toContain('Do NOT also post a top-level comment');
+    expect(prompt).toContain('the whole response: no top-level comment');
   });
 
   it('says silence is a valid response, so notifications do not become comments', () => {
@@ -93,8 +93,8 @@ describe('renderEventPrompt', () => {
       envelope('pr_comment', { action: 'created', commentId: 7, untrustedBody: untrusted('fyi') }),
     );
 
-    expect(prompt).toContain('Post nothing and carry on');
-    expect(prompt).toContain('Never post a comment whose content is that you have nothing to say');
+    expect(prompt).toContain('post nothing at all');
+    expect(prompt).toContain('not even to say so');
     expect(prompt).toContain('Never post the same answer twice');
   });
 
@@ -110,9 +110,9 @@ describe('renderEventPrompt', () => {
       }),
     );
 
-    expect(prompt).toContain('TOP-LEVEL comment');
+    expect(prompt).toContain('Report it TOP-LEVEL');
     expect(prompt).toContain('gh pr comment 42 --repo acme-labs/widget-service');
-    expect(prompt).toContain('never answer an event inside a thread it did not come from');
+    expect(prompt).toContain('never answer in a thread the event did not come from');
     expect(prompt).not.toContain('IN THE THREAD ONLY');
   });
 
@@ -121,14 +121,14 @@ describe('renderEventPrompt', () => {
       envelope('pr_comment', { action: 'created', commentId: 7, untrustedBody: untrusted('why?') }),
     );
 
-    expect(prompt).toContain('Answer, then stop');
+    expect(prompt).toContain('Stop when answered');
     expect(prompt).toContain('No preamble');
     // A reviewer wants the outcome, not a transcript of how it was reached.
-    expect(prompt).toContain('Write for a reviewer, not a log');
+    expect(prompt).toContain('Lead with the outcome');
     expect(prompt).toContain('no mechanics');
     // Concise is the default, not a cap: a thorough answer is still allowed when asked
     // for, or when brevity would drop a caveat the reader needs.
-    expect(prompt).toContain('Go longer only for a thorough explanation they asked for');
+    expect(prompt).toContain('go longer only if they asked');
   });
 
   it('links a top-level reply back to what it answers', () => {
@@ -153,7 +153,7 @@ describe('renderEventPrompt', () => {
       }),
     );
 
-    expect(prompt).toContain('Add no link and no "answering X" line');
+    expect(prompt).toContain('no link, no "answering X" line');
   });
 
   it('forbids inventing or carrying over a link when the event gave none', () => {
@@ -164,7 +164,7 @@ describe('renderEventPrompt', () => {
       }),
     );
 
-    expect(prompt).toContain('No URL given, no link');
+    expect(prompt).toContain('None given, none used');
     expect(prompt).toContain('reuse one from an earlier event');
   });
 
@@ -178,9 +178,9 @@ describe('renderEventPrompt', () => {
     };
     const prompt = renderEventPrompt(withUrl);
 
-    expect(prompt).toContain('paste this URL verbatim');
+    expect(prompt).toContain('into the body verbatim');
     expect(prompt).toContain('https://github.com/acme-labs/widget-service/pull/42#issuecomment-99');
-    expect(prompt).toContain('do not build a link out of the PR number');
+    expect(prompt).toContain('and no other URL');
   });
 
   it('does not ask a thread reply to link back, since it sits under its own comment', () => {
@@ -234,8 +234,8 @@ describe('renderEventPrompt', () => {
     );
 
     expect(prompt).toContain('Workflow "Ship It"');
-    expect(prompt).toContain('Act on this yourself, now');
-    expect(prompt).toContain('Never ask for confirmation');
+    expect(prompt).toContain('Act now, on your own');
+    expect(prompt).toContain('Never ask permission');
     expect(prompt).toContain('gh run view 9 --repo acme-labs/widget-service --log-failed');
     expect(prompt).toContain('unrelated to this PR');
     expect(prompt).not.toContain('Do not chase this');
@@ -328,9 +328,9 @@ describe('unattended work', () => {
     );
 
     expect(prompt).toContain('Nobody is watching the terminal');
-    expect(prompt).toContain('Never ask for confirmation');
+    expect(prompt).toContain('Never ask permission');
     // A judgement call is acted on and flagged, not queued behind a question.
-    expect(prompt).toContain('Flag it, do not wait on it');
+    expect(prompt).toContain('what you chose and what you doubted');
   });
 
   it('names the actions that are still worth stopping for', () => {
@@ -341,7 +341,7 @@ describe('unattended work', () => {
       }),
     );
 
-    for (const guarded of ['force-pushing', 'merging or closing the PR', 'credentials']) {
+    for (const guarded of ['force-pushing', 'merging, closing', 'credentials']) {
       expect(prompt).toContain(guarded);
     }
   });

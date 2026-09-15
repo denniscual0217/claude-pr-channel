@@ -30,41 +30,37 @@ function fence(id: string, label: string, text: UntrustedGithubText): string {
 // tell at a glance which comments came from the worker rather than from a person.
 const REPLY_PREFIX = '**Claude:** ';
 
+// Every event carries this, so it is kept short on purpose: the session has to read it
+// before it can act, and a rule it skims is a rule it does not follow. Each line is here
+// because its absence cost something once — a silent CI failure, a duplicate comment, a
+// confident link to the wrong thread.
 function respond(lines: readonly string[]): string {
   return [
     // The author reads the PR, not the terminal, so anything asked here waits forever.
-    'Act on this yourself, now. Nobody is watching the terminal: make the change, run ' +
-      'the tests, commit, push to this PR\'s branch. Never ask for confirmation, and ' +
-      'never stop to report that you are about to start.',
-    'Judgement calls are yours too — behaviour beyond what was asked, a weakened test, ' +
-      'a workaround, a dependency or CI change. Decide, then say in your comment what ' +
-      'you did and what you were unsure about. Flag it, do not wait on it.',
-    // The tier between "just decide it" and the forbidden list: real enough that guessing
-    // would waste the work, not dangerous enough to be banned outright.
-    'The exception is a decision only the author can make — a product call, a tradeoff ' +
-      'with no right answer, anything that changes what the PR is meant to do rather ' +
-      'than how it does it. Do not handle those. Post a comment on the PR saying what ' +
-      'the decision is, the options, and which you would pick, and leave it to them.',
-    'Either way you are never blocked: act, or post the question and move on to the ' +
-      'next thing. Never hold the turn open waiting for an answer that is not coming.',
-    'Never unattended, however right it looks: pushing anywhere but this PR\'s branch, ' +
-      'force-pushing, rewriting published history, merging or closing the PR, deleting ' +
-      'branches, changing repository settings, touching credentials. Raise those on the ' +
-      'PR and leave them to the author.',
-    'Respond now, without waiting to be asked:',
+    'Act now, on your own. Nobody is watching the terminal: change the code, run the ' +
+      'tests, commit, push to this PR\'s branch. Never ask permission; never stop to ' +
+      'say you are starting.',
+    'Judgement calls are yours — scope, a weakened test, a workaround, a dependency or ' +
+      'CI change. Decide, then say in your comment what you chose and what you doubted.',
+    // The tier between deciding and the forbidden list: real enough that guessing wastes
+    // the work, not dangerous enough to ban outright.
+    'Except a call only the author can make — a product question, a tradeoff with no ' +
+      'right answer, anything that changes what this PR is for. Do not handle it: post ' +
+      'the options and the one you would pick, and leave it to them.',
+    'Never unattended: pushing off this PR\'s branch, force-pushing, rewriting history, ' +
+      'merging, closing, deleting branches, repository settings, credentials. Raise ' +
+      'those on the PR.',
+    'Never block. Either act, or post and move on.',
+    'Now:',
     ...lines.map((line) => `- ${line}`),
-    `- Begin every comment with ${REPLY_PREFIX.trim()} in bold, exactly as shown.`,
-    '- One comment, in one place: an inline review comment is answered in its own ' +
-      'thread, everything else at the top level with "gh pr comment". Never post the ' +
-      'same answer twice, and never answer an event inside a thread it did not come from.',
-    '- Nothing to change and nothing asked of you? Post nothing and carry on. Never ' +
-      'post a comment whose content is that you have nothing to say.',
-    '- Link only a URL this event gave you, verbatim. No URL given, no link: never ' +
-      'invent one, rebuild one from a number, or reuse one from an earlier event.',
-    '- Write for a reviewer, not a log: the outcome and anything they must decide. No ' +
-      'preamble, no restating their comment, no mechanics — what you ran, what you ' +
-      'opened, what you tried first. Answer, then stop. Go longer only for a thorough ' +
-      'explanation they asked for, or a caveat they need.',
+    `- Start every comment with ${REPLY_PREFIX.trim()}, in bold.`,
+    '- One comment, one place: an inline review comment in its own thread, everything ' +
+      'else top-level with "gh pr comment". Never post the same answer twice, and never ' +
+      'answer in a thread the event did not come from.',
+    '- Nothing asked and nothing to change: post nothing at all — not even to say so.',
+    '- Link only a URL this event gave you, verbatim. None given, none used: never invent one, build one from a number, or reuse one from an earlier event.',
+    '- Lead with the outcome. No preamble, no restating their comment, no mechanics. ' +
+      'Stop when answered; go longer only if they asked, or a caveat needs it.',
   ].join('\n');
 }
 
@@ -78,9 +74,7 @@ function linkBack(url: string | null): string[] {
   return url === null
     ? []
     : [
-        `Link what you are answering: paste this URL verbatim into the body — ${url} — ` +
-          'and no other. Do not shorten it, do not build a link out of the PR number, ' +
-          'and do not reuse a URL from an earlier event.',
+        `Link what you are answering: paste ${url} into the body verbatim, and no other URL.`,
       ];
 }
 
@@ -95,10 +89,10 @@ function body(envelope: EventEnvelope): string[] {
         `${actor(event.actorLogin)} ${event.action} a comment on ${where}.`,
         fence(envelope.id, 'comment', event.untrustedBody),
         respond([
-          'If it asks for a code change, make the change, then commit and push it.',
+          'If it asks for a code change, make it, then commit and push.',
           conversationReply(event.prRef),
           ...linkBack(event.htmlUrl),
-          'If you are not going to do what it asks, reply saying so and why.',
+          'If you are not going to do what it asks, say so and why.',
         ]),
       ];
 
@@ -107,7 +101,7 @@ function body(envelope: EventEnvelope): string[] {
         `${actor(event.actorLogin)} ${event.action} a review on ${where} (${event.reviewState}).`,
         fence(envelope.id, 'review', event.untrustedBody),
         respond([
-          'Address the review feedback in code, then commit and push.',
+          'Address the feedback in code, then commit and push.',
           conversationReply(event.prRef),
           ...linkBack(event.htmlUrl),
           'Push before you reply, so the reply is true when it lands.',
@@ -120,11 +114,10 @@ function body(envelope: EventEnvelope): string[] {
           `${event.path}${event.line === null ? '' : `:${event.line}`}.`,
         fence(envelope.id, 'review comment', event.untrustedBody),
         respond([
-          'Make the change at that location if it is warranted, then commit and push.',
-          `Reply IN THE THREAD ONLY, with: gh api repos/${repo}/pulls/${prNumber}/comments/${event.commentId}/replies -f body="${REPLY_PREFIX}<your reply>"`,
-          `Do NOT also post a top-level comment with "gh pr comment" for this — the thread reply is the whole response.`,
-          'Add no link and no "answering X" line: the reply sits directly under the comment it answers.',
-          'If you disagree, reply in the thread saying why instead of changing the code.',
+          'Make the change there if warranted, then commit and push.',
+          `Reply IN THE THREAD ONLY: gh api repos/${repo}/pulls/${prNumber}/comments/${event.commentId}/replies -f body="${REPLY_PREFIX}<your reply>"`,
+          'That thread reply is the whole response: no top-level comment, no link, no "answering X" line.',
+          'If you disagree, say why in the thread instead of changing the code.',
         ]),
       ];
 
@@ -134,11 +127,11 @@ function body(envelope: EventEnvelope): string[] {
         ...(event.detailsUrl === null ? [] : [`Details: ${event.detailsUrl}`]),
         needsAttention(event.state)
           ? respond([
-              `Get the failure output (gh run view --repo ${repo} --log-failed, or the details URL).`,
-              'Fix the cause, run the check locally to confirm it passes, then commit and push.',
-              `Report what you changed as a TOP-LEVEL comment: ${conversationReply(event.prRef)}`,
+              `Read the failure first: gh run view --repo ${repo} --log-failed`,
+              'Fix the cause, confirm it passes locally, then commit and push.',
+              `Report it TOP-LEVEL: ${conversationReply(event.prRef)}`,
               ...linkBack(event.detailsUrl),
-              'If it is a pre-existing or unrelated failure, say so there rather than forcing a fix.',
+              'If the failure is pre-existing or unrelated, say so there instead of forcing a fix.',
             ])
           : 'No action needed unless it blocks your current step.',
       ];
@@ -154,11 +147,10 @@ function body(envelope: EventEnvelope): string[] {
                 respond([
                   `Read the run first: gh run view ${event.workflowRunId} --repo ${repo} --log-failed`,
                   'Fix the cause, confirm it passes locally, then commit and push.',
-                  `Report what you changed as a TOP-LEVEL comment: ${conversationReply(event.prRef)}`,
+                  `Report it TOP-LEVEL: ${conversationReply(event.prRef)}`,
                   ...linkBack(event.htmlUrl),
-                  'A workflow can fail for reasons unrelated to this PR. If that is what ' +
-                    'happened, say so in that comment rather than changing code to chase it — ' +
-                    'but decide which it is yourself, do not wait to be told.',
+                  'A workflow can fail for reasons unrelated to this PR. Decide which it is ' +
+                    'yourself, and if it is unrelated say so there instead of chasing it.',
                 ]),
               ]
             : [
