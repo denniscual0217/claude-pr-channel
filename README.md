@@ -49,21 +49,6 @@ Then `claude-pr` starts a session, and `claude-pr --resume <session-id>` resumes
 `alias` will not do: it can only append, and the channel argument has to come after your
 own flags.
 
-## Resuming a session
-
-A channel belongs to the process that opened it, so resuming needs the same flag as
-starting. Pass it alongside `--resume`:
-
-```
-claude --resume <session-id> --dangerously-load-development-channels plugin:pr-channel@pr-channel-local
-```
-
-or `claude-pr --resume <session-id>` with the function above.
-
-Resuming restores the conversation, not the tracking: the webhook was deleted when the
-previous process exited. Run `/pr-channel:track` again to start receiving events. Drop the
-channel flag and the session still resumes, but nothing will ever reach it.
-
 ## Tracking a PR
 
 The plugin's skills are namespaced by its name:
@@ -83,6 +68,21 @@ Behind those, the channel server exposes three tools:
 `track` accepts `pr`, `repo`, `ci_events`, `comment_authors`,
 `bot_comments` and `replace`. The four filters override the matching keys in the
 [config file](#configuration) for that one PR.
+
+## Resuming a session
+
+A channel belongs to the process that opened it, so resuming needs the same flag as
+starting. Pass it alongside `--resume`:
+
+```
+claude --resume <session-id> --dangerously-load-development-channels plugin:pr-channel@pr-channel-local
+```
+
+or `claude-pr --resume <session-id>` with the function above.
+
+Resuming restores the conversation, not the tracking: the webhook was deleted when the
+previous process exited. Run `/pr-channel:track` again to start receiving events. Drop the
+channel flag and the session still resumes, but nothing will ever reach it.
 
 ## Security
 
