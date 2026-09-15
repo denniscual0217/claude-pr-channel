@@ -7,6 +7,7 @@
   "scripts": {
     "start": "bun install --frozen-lockfile --no-summary 1>&2 && bun server.ts",
     "test": "bun test",
+    "typecheck": "tsc --noEmit",
     "schema": "bun scripts/write-schema.ts",
     "config": "bun ui/server.ts"
   },
@@ -15,6 +16,7 @@
     "zod": "4.6.2"
   },
   "devDependencies": {
-    "bun-types": "1.4.2"
+    "bun-types": "1.4.2",
+    "typescript": "5.9.3"
   }
 }

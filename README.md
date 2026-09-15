@@ -157,8 +157,15 @@ Linux and macOS. Windows is not supported.
 ```
 bun install
 bun test
+bun run typecheck
 bun run schema   # after changing src/config-schema.ts
 ```
+
+Run the typecheck as well as the tests: Bun executes TypeScript without checking it, so
+`bun test` alone will not catch a type error. It is also what keeps the event kinds
+honest — the switches in `src/channel/filter.ts` and `src/delivery/prompt.ts` have no
+`default`, so adding a kind fails to compile until both decide what to do with it. The
+tests stay green either way.
 
 The suite is offline. `test/setup.ts` puts a `gh` shim first on `PATH` and the shim exits
 99 unless a test configured it, so no test can reach GitHub.

@@ -227,6 +227,9 @@ interface Issue {
   readonly values?: readonly unknown[];
   readonly minimum?: unknown;
   readonly maximum?: unknown;
+  // zod sets this on too_small / too_big to say what was measured: a string's length, an
+  // array's, or a number's value. Without it the two read identically.
+  readonly origin?: string;
 }
 
 // Shared by the config file and by the track arguments: one wording for "this value is

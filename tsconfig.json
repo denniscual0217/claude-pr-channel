@@ -3,7 +3,9 @@
     "target": "ES2023",
     "module": "Preserve",
     "moduleResolution": "bundler",
-    "types": ["bun-types"],
+    "types": [
+      "bun-types"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
@@ -12,5 +14,11 @@
     "skipLibCheck": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["server.ts", "scripts/**/*.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "server.ts",
+    "scripts/**/*.ts",
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "ui/**/*.ts"
+  ]
 }
