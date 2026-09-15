@@ -137,8 +137,13 @@ bun run config
 ```
 
 An invalid file is never fallen back from: `track` refuses until it is fixed, naming the
-key, what was wrong and what was expected. Changes apply when a channel next starts; a
-session already tracking keeps the settings it began with.
+key, what was wrong and what was expected.
+
+**Editing the config does not need a new session.** It is read when `track` runs, so
+`/pr-channel:untrack` then `/pr-channel:track` in the same session is enough. Nothing is
+re-read while a session is tracking, so the edit takes hold at that point and not before.
+Only a change to the plugin's own code needs a restart, because the server loads it once
+at startup.
 
 **[docs/configuration.md](docs/configuration.md) is the manual** — every setting, what
 each one delivers, and the JSON for the things people actually change.

@@ -127,9 +127,11 @@ you never have to guess whether an edit took effect.
 
 ## When changes apply
 
-At the next `track`. A session already tracking keeps the settings it started with, so
-after editing, restart that session or untrack and track again. Nothing is re-read
-mid-flight.
+At the next `track` — not at the next session. `/pr-channel:untrack` then
+`/pr-channel:track` in the same session is enough, and there is no need to exit or resume.
+A session already tracking keeps the settings it started with; nothing is re-read
+mid-flight. Only a change to the plugin's own code needs a new session, because the server
+loads it once at startup.
 
 ## When it refuses
 
