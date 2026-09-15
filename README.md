@@ -123,10 +123,11 @@ machine you share with people you would not trust with that repository**.
 
 ## Configuration
 
-No CI is delivered until you name the workflows you want. Comments, reviews and the main
-lifecycle actions are on by default.
+One JSON file at `${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json`. Every key
+is optional and `{}` is valid, so set only what you want to change.
 
-Put this at `${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json`:
+**Name the CI you care about.** Nothing is delivered until you do. `name` is the
+workflow's own `name:`, not a job's; `wake` is `failures`, `success`, `completed` or `all`.
 
 ```json
 {
@@ -140,8 +141,24 @@ Put this at `${XDG_CONFIG_HOME:-~/.config}/claude-pr-channel/config.json`:
 }
 ```
 
-`name` is the workflow's own `name:`, not a job's. `wake` is `failures`, `success`,
-`completed` or `all`. Every key is optional and `{}` is a valid file.
+**Let someone else's comments drive it.** Only your own do by default — acting on a
+comment means pushing code. List yourself too, or you drop off.
+
+```json
+{ "authors": { "mode": "listed", "allow": ["your-login", "a-colleague"] } }
+```
+
+**Turn an event off, or a lifecycle action on.** Seven of the 22 pull-request actions are
+on by default; the rest, including `labeled`, are not.
+
+```json
+{
+  "events": {
+    "reviewComments": { "enabled": false },
+    "lifecycle": { "labeled": true }
+  }
+}
+```
 
 Or edit it in a browser:
 
@@ -152,8 +169,8 @@ bun run config
 Changes take hold at the next `track` — `/pr-channel:untrack` then `/pr-channel:track`,
 same session, no restart.
 
-**[docs/configuration.md](docs/configuration.md)** has every setting: the other events you
-can turn on, whose comments are acted on, and how to watch CI that is not GitHub Actions.
+**[docs/configuration.md](docs/configuration.md)** has every setting: all 22 lifecycle
+actions, ignoring bot reviewers, and watching CI that is not GitHub Actions.
 
 ## Supported OS
 
