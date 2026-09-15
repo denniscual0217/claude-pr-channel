@@ -6,14 +6,6 @@ CI goes red — the session reads the failing job, fixes the cause, pushes, and 
 goes green. A reviewer leaves an inline comment — it answers in that thread. No more
 babysitting the pull request; the plugin does it for you.
 
-## Supported systems
-
-Linux and macOS. Windows is not supported: the teardown that deletes the webhook relies on
-Unix signals, `ps` and orphan reparenting, none of which behave the same there.
-
-Linux is what it runs on daily. macOS should work — nothing is Linux-specific — but there
-is no CI yet, so nobody has proved it.
-
 ## Installing
 
 You need [Bun](https://bun.sh) and the [GitHub CLI](https://cli.github.com), authenticated
@@ -155,6 +147,10 @@ at startup.
 
 **[docs/configuration.md](docs/configuration.md) is the manual** — every setting, what
 each one delivers, and the JSON for the things people actually change.
+
+## Supported OS
+
+Linux and macOS. Windows is not supported.
 
 ## Development
 
