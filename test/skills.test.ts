@@ -39,11 +39,27 @@ describe('the track skill', () => {
   // The skill used to open by asking the session to read the channel banner out of its
   // own context and refuse if it was absent. A session cannot see that reliably, so a
   // first track refused on a channel that was in fact attached, and the same command
-  // worked on the second try.
+  // worked on the second try. The rule is general: a precondition the session cannot
+  // observe becomes a coin flip, and the failure mode is refusing work that was fine.
   it('does not gate tracking on a banner the session cannot see', () => {
     expect(track).not.toContain('banner');
     expect(track).not.toContain('Channels\n   (experimental)');
     expect(track).toContain('not replayed');
+  });
+
+  it('puts the decision in the tool rather than in what the session thinks it sees', () => {
+    for (const skill of [track, untrack]) {
+      expect(skill).toContain('The tool decides, not you.');
+      expect(skill.toLowerCase()).toContain('never refuse beforehand');
+    }
+  });
+
+  // Every "stop" the skill can reach has to be traceable to something the tool returned,
+  // so the codes and the branches stay in step.
+  it('stops only on a code the tool can actually return', () => {
+    const codes = ['already_tracking', 'pr_closed', 'gh_unauthenticated', 'gh_webhook_extension_missing',
+      'forwarder_failed', 'invalid_argument', 'config_invalid'];
+    for (const code of codes) expect(track).toContain(code);
   });
 
   it('drives the tools rather than a CLI', () => {

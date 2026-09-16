@@ -9,6 +9,9 @@ version: 4.0.0
 
 Stop tracking the pull request this session is bound to.
 
+The tool decides, not you. Call it first and report what came back.
+Never refuse beforehand on something you cannot see in a tool result.
+
 1. Call the **untrack** tool. It takes no arguments.
 
 2. Report what came back: the PR that was being tracked, the webhook id that was deleted,

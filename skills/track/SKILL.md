@@ -17,6 +17,11 @@ One session tracks one PR. This session owns the webhook it creates and deletes 
 tracking stops or the session ends. Another session may track the same PR at the same
 time: both will see the same events and both will act, so say so if that is a risk.
 
+The tool decides, not you. Call it and report what came back.
+Never refuse beforehand on something you cannot see in a tool result — whether the
+channel is attached to this session, what a previous session did, what the start-up text
+said. Every reason to stop is a failure code from the tool, listed in step 3.
+
 ## Start tracking
 
 1. Resolve the arguments. A bare number, `owner/name#n` or a PR URL all work; with no
@@ -47,6 +52,11 @@ time: both will see the same events and both will act, so say so if that is a ri
 4. On success, report the repo, PR, head sha, hook id and the filters in effect, and
    state plainly that events from before this moment are not replayed — anything that
    happened earlier has to be looked up with `gh` if it matters.
+
+   Success means the webhook is confirmed and events are being forwarded. It does not
+   prove the channel is attached to this session, which nothing here can check. If the
+   user says events never arrive, that is the thing to suspect: the session has to be
+   started with the channel flag.
 
 Use the **status** tool whenever the user asks whether events are still flowing. It
 reports the live forwarder state from the running `gh` child, not a stored row, so
