@@ -120,10 +120,9 @@ admin is admin, and the token it uses is your `gh` login.
 
 ### The webhook secret
 
-Generated per `track`, held in memory, never written to a file, a log or a marker.
-`gh webhook forward` takes it on its own argv, where any local user can read it with `ps`.
-That cannot be avoided without replacing gh-webhook, and it means **this is not safe on a
-machine you share with people you would not trust with that repository**.
+Generated per `track`, held in memory, never written to a file, a log or a marker. Every
+delivery is verified against it with HMAC-SHA256 over the raw bytes, before the body is
+parsed.
 
 ## Configuration
 

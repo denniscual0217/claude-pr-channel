@@ -18,8 +18,7 @@ export interface ForwarderOptions {
   readonly repo: string;
   readonly events: readonly string[];
   readonly url: string;
-  // gh takes the secret as a flag and nothing else, so argv is the one place it can go,
-  // where any local user can read it. That is why a shared machine is unsupported.
+  // gh takes the secret as a flag and nothing else, so argv is the one place it can go.
   readonly secret: string;
   readonly spawn: SpawnForwarder;
   readonly connectTimeoutMs?: number;
