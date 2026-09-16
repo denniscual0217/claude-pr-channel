@@ -19,18 +19,14 @@ time: both will see the same events and both will act, so say so if that is a ri
 
 ## Start tracking
 
-1. Confirm this session has the channel attached: its banner says `Channels
-   (experimental) messages from server:pr-channel inject directly in this session`.
-   Without it, nothing will ever arrive — say so and stop rather than tracking.
-
-2. Resolve the arguments. A bare number, `owner/name#n` or a PR URL all work; with no
+1. Resolve the arguments. A bare number, `owner/name#n` or a PR URL all work; with no
    argument at all, the PR for the current branch is used. `--repo owner/name` becomes
    the `repo` argument and wins over whatever the PR reference implies.
 
-3. Call the **track** tool with those arguments. Add `ci_events`,
+2. Call the **track** tool with those arguments. Add `ci_events`,
    `comment_authors` or `bot_comments` only if the user asked for them.
 
-4. Read the result. The first line of a failure is `code: message`:
+3. Read the result. The first line of a failure is `code: message`:
    - `already_tracking` — this session already tracks a PR. Only pass `replace: true` if
      the user actually said to switch; otherwise report what is tracked and stop.
    - `pr_closed` — the PR is merged or closed. Nothing to track; say so.
@@ -48,7 +44,7 @@ time: both will see the same events and both will act, so say so if that is a ri
      the plugin no longer reads is still set. The message lists every problem, one per
      line, with the key that replaces each variable. Report it and stop.
 
-5. On success, report the repo, PR, head sha, hook id and the filters in effect, and
+4. On success, report the repo, PR, head sha, hook id and the filters in effect, and
    state plainly that events from before this moment are not replayed — anything that
    happened earlier has to be looked up with `gh` if it matters.
 
