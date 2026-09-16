@@ -100,10 +100,14 @@ Three things keep the blast radius small, and you should keep all three:
 - **`authors.mode` defaults to `operator`** — you alone, the account `gh` is
   authenticated as. Widen it deliberately (`"mode": "listed"` and one login at a time in
   `authors.allow`), and understand that everyone you add can ask your session to change
-  code.
+  code. Write access on the repository includes editing other people's comments, so an
+  edit or a dismissal is checked against whoever made it as well as against the author,
+  and a bot may edit only its own comment. A deletion is not delivered at all.
 - **Automated reviewers are allowed by default** because their findings are useful. A bot
-  that is compromised, or simply confused, gets the same audience as a person.
-  `"bots": "ignore"` turns them off.
+  that is compromised, or simply confused, gets the same audience as a person, and
+  `authors.mode` does not restrict bots at all — `operator` means you alone among people.
+  `"bots": "ignore"` turns every bot off; `"bots": "listed"` with `authors.allowBots`
+  keeps the one reviewer you trust and refuses every other app installed on the repo.
 - **The session's permission mode is the real limit.** The plugin does not sandbox
   anything: an event runs with whatever the session was launched with. Never run a
   PR-bound session with `--dangerously-skip-permissions`.
@@ -160,7 +164,7 @@ on by default; the rest, including `labeled`, are not.
 }
 ```
 
-Or edit it in a browser:
+Or edit it in a browser — open the link it prints, token and all:
 
 ```
 bun run config

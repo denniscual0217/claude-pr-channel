@@ -31,6 +31,7 @@ export interface Config {
     readonly mode: AuthorsMode;
     readonly allow: readonly string[];
     readonly bots: BotComments;
+    readonly allowBots: readonly string[];
   };
   readonly limits: {
     readonly maxPayloadBytes: number;
@@ -75,7 +76,7 @@ export const DEFAULT_CONFIG: Config = {
       dequeued: false,
     },
   },
-  authors: { mode: 'operator', allow: [], bots: 'handle' },
+  authors: { mode: 'operator', allow: [], bots: 'handle', allowBots: [] },
   limits: { maxPayloadBytes: 1_048_576, rateLimit: { maxDeliveries: 120, windowMs: 60_000 } },
   cache: { dir: null, sweepOnTrack: true },
 };
@@ -342,6 +343,8 @@ export interface EffectiveSettings {
   // null means every human author. A trust boundary, applied during normalization.
   readonly commentAuthors: ReadonlySet<string> | null;
   readonly botComments: BotComments;
+  // null means every bot, subject to botComments. Only a 'listed' setting names a set.
+  readonly botAuthors: ReadonlySet<string> | null;
   readonly workflowNames: ReadonlySet<string>;
   readonly limits: Config['limits'];
   readonly cache: Config['cache'];
@@ -388,6 +391,7 @@ export function resolveTracking(config: Config, input: TrackInput, ghLogin: stri
     },
     commentAuthors: resolveCommentAuthors(config, input.comment_authors, ghLogin),
     botComments,
+    botAuthors: botComments === 'listed' ? new Set(config.authors.allowBots) : null,
     workflowNames: new Set(events.workflows.map((entry) => entry.name)),
     limits: config.limits,
     cache: config.cache,

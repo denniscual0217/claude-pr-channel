@@ -32,6 +32,7 @@ export interface PipelineOptions {
   readonly policy: DeliveryPolicy;
   readonly commentAuthors: ReadonlySet<string> | null;
   readonly botComments: BotComments;
+  readonly botAuthors: ReadonlySet<string> | null;
   readonly workflowNames: ReadonlySet<string>;
   readonly logger?: Logger;
   readonly now?: () => Date;
@@ -93,6 +94,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       },
       commentAuthors: options.commentAuthors,
       botComments: options.botComments,
+      botAuthors: options.botAuthors,
       workflowNames: options.workflowNames,
     });
 

@@ -298,6 +298,7 @@ export class Tracking {
       policy: settings.policy,
       commentAuthors: settings.commentAuthors,
       botComments: settings.botComments,
+      botAuthors: settings.botAuthors,
       workflowNames: settings.workflowNames,
       logger: this.#log,
       now: this.#now,
@@ -711,9 +712,13 @@ function filtersLine(settings: EffectiveSettings): string {
   return [
     `filters: ci_events=${settings.policy.checks.wake} (${settings.origins.ciEvents})`,
     `comment_authors=${authors} (${authorsOrigin})`,
-    `bot_comments=${settings.botComments} (${settings.origins.botComments})`,
+    `bot_comments=${botComments(settings)} (${settings.origins.botComments})`,
     `workflows=[${[...settings.policy.workflows].map(([name, wake]) => `${name}:${wake}`).join(', ')}] (file)`,
   ].join(', ');
+}
+
+function botComments(settings: EffectiveSettings): string {
+  return settings.botAuthors === null ? settings.botComments : `listed: ${[...settings.botAuthors].join(', ')}`;
 }
 
 function forwarderLine(forwarder: Forwarder): string {

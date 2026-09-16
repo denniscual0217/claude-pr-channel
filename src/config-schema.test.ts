@@ -70,6 +70,10 @@ describe('the committed JSON Schema', () => {
     expect(ConfigSchema.safeParse({ events: { checks: { wake: 'sometimes' } } }).success).toBe(false);
 
     expect(at('authors.mode')['enum']).toEqual(['operator', 'listed', 'anyone']);
+    expect(at('authors.bots')['enum']).toEqual(['handle', 'listed', 'ignore']);
+    expect(at('authors.allowBots')).toMatchObject({ type: 'array' });
+    expect(ConfigSchema.safeParse({ authors: { bots: 'listed' } }).success).toBe(false);
+    expect(ConfigSchema.safeParse({ authors: { bots: 'listed', allowBots: ['coderabbitai[bot]'] } }).success).toBe(true);
     expect(at('limits.maxPayloadBytes')).toMatchObject({ type: 'integer', minimum: 1, maximum: 26_214_400 });
     expect(ConfigSchema.safeParse({ limits: { maxPayloadBytes: 26_214_401 } }).success).toBe(false);
     expect(at('cache.dir')['type']).toEqual(['string', 'null']);
@@ -87,9 +91,13 @@ describe('the schema the track tool advertises', () => {
       path.split('.').reduce<Node>((node, key) => (node['properties'] as Record<string, Node>)[key] as Node, generated);
 
     expect(at('ci_events')['enum']).toEqual(inFile('events.checks.wake')['enum']);
-    expect(at('bot_comments')['enum']).toEqual(inFile('authors.bots')['enum']);
     expect(at('ci_events')['enum']).toEqual(['failures', 'completed', 'all']);
+    // bot_comments is the one argument narrower than its file key: "listed" needs the
+    // logins that go with it, and a track call has nowhere to put them, so offering it
+    // here could only ever mean an empty list — which silently drops every bot.
+    expect(inFile('authors.bots')['enum']).toEqual(['handle', 'listed', 'ignore']);
     expect(at('bot_comments')['enum']).toEqual(['handle', 'ignore']);
+    expect(TrackInputSchema.safeParse({ bot_comments: 'listed' }).success).toBe(false);
     expect(TrackInputSchema.safeParse({ ci_events: 'Completed' }).success).toBe(false);
     expect(TrackInputSchema.safeParse({ bot_comments: 'Ignore' }).success).toBe(false);
     expect(TrackInputSchema.safeParse({ ci_events: 'all', bot_comments: 'ignore' }).success).toBe(true);

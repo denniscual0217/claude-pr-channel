@@ -260,11 +260,26 @@
     return next;
   }
 
+  // The token rides in the fragment, which browsers never put on the wire or in a
+  // referer, so the link can be bookmarked on a phone without leaking the token.
+  const token = location.hash.slice(1);
+  const auth = { authorization: `Bearer ${token}` };
+
+  async function api(path, init = {}) {
+    const response = await fetch(path, { ...init, headers: { ...auth, ...(init.headers ?? {}) } });
+    if (response.status === 401) {
+      say('open the link printed by "bun run config" — this one is missing its token', 'bad');
+      throw new Error('unauthorized');
+    }
+    return response;
+  }
+
   async function load() {
     const [s, c] = await Promise.all([
-      fetch('/api/schema').then((r) => r.json()),
-      fetch('/api/config').then((r) => r.json()),
-    ]);
+      api('/api/schema').then((r) => r.json()),
+      api('/api/config').then((r) => r.json()),
+    ]).catch(() => [null, null]);
+    if (s === null) return;
     schema = s;
     $('path').textContent = c.exists ? c.path : `${c.path}  (no file yet — showing defaults)`;
     try { config = JSON.parse(c.text); } catch { config = {}; }
@@ -282,11 +297,12 @@
   async function save() {
     const text = mode === 'raw' ? $('text').value : `${JSON.stringify(collect(), null, 2)}\n`;
     say('saving…', '');
-    const response = await fetch('/api/config', {
+    const response = await api('/api/config', {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text }),
-    });
+    }).catch(() => null);
+    if (response === null) return;
     const body = await response.json();
     if (!response.ok) { say(body.error ?? 'save failed', 'bad'); return; }
     say('Saved. Restart any tracking session to pick it up.', 'good');

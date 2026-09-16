@@ -2,7 +2,6 @@ import type { Logger } from '../log.js';
 import { noopLogger } from '../log.js';
 
 export const CONNECT_LINE = 'Forwarding Webhook events from GitHub...';
-export const SECRET_ENV = 'PR_CHANNEL_WEBHOOK_SECRET';
 
 export type ForwarderState = 'starting' | 'connected' | 'restarting' | 'dead';
 
@@ -13,14 +12,14 @@ export interface ChildHandle {
   kill(signal?: NodeJS.Signals): void;
 }
 
-export type SpawnForwarder = (args: readonly string[], env: Record<string, string>) => ChildHandle;
+export type SpawnForwarder = (args: readonly string[]) => ChildHandle;
 
 export interface ForwarderOptions {
   readonly repo: string;
   readonly events: readonly string[];
   readonly url: string;
-  // Handed over only here, and only into the child's environment. gh re-exposes it on its
-  // own argv, which is unavoidable; nothing of ours puts it there.
+  // gh takes the secret as a flag and nothing else, so argv is the one place it can go,
+  // where any local user can read it. That is why a shared machine is unsupported.
   readonly secret: string;
   readonly spawn: SpawnForwarder;
   readonly connectTimeoutMs?: number;
@@ -95,7 +94,7 @@ export function createForwarder(options: ForwarderOptions): Forwarder {
     // Nothing may reach spawn() after stop(): a gh started then creates a hook that no
     // marker, janitor or sweep will ever name.
     if (stopped) throw new ForwarderError('gh webhook forward was stopped before it could be launched', '');
-    const handle = options.spawn(args, { [SECRET_ENV]: options.secret });
+    const handle = options.spawn(args);
     child = handle;
     currentStart = processStart(handle.pid);
 
@@ -261,10 +260,9 @@ export async function* lines(stream: ReadableStream<Uint8Array>): AsyncGenerator
 }
 
 export function spawnGhForwarder(cwd: string): SpawnForwarder {
-  return (args, env) => {
+  return (args) => {
     const child = Bun.spawn(['gh', ...args], {
       cwd,
-      env: { ...process.env, ...env },
       stdout: 'ignore',
       stderr: 'pipe',
       stdin: 'ignore',

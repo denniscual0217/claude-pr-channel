@@ -1,4 +1,5 @@
 import type { CheckState, EventEnvelope, PrRef, UntrustedGithubText, WorkflowRunState } from '../types.js';
+import { untrusted } from '../types.js';
 
 const NEEDS_ATTENTION = new Set(['failure', 'timed_out', 'action_required', 'startup_failure']);
 
@@ -123,7 +124,8 @@ function body(envelope: EventEnvelope): string[] {
 
     case 'ci_check':
       return [
-        `CI check ${event.checkName} on ${where} is ${describeState(event.state)} for head ${event.headSha}.`,
+        `A CI check on ${where} is ${describeState(event.state)} for head ${event.headSha}.`,
+        fence(envelope.id, 'check name', untrusted(event.checkName)),
         ...(event.detailsUrl === null ? [] : [`Details: ${event.detailsUrl}`]),
         needsAttention(event.state)
           ? respond([

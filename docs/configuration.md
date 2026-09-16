@@ -15,6 +15,12 @@ by hand, or open the editor:
 bun run config
 ```
 
+It prints a link with a token in the fragment — `http://127.0.0.1:4319/#<token>` — and
+that token is what lets the page read and write the file; a bare URL loads but every API
+call answers 401. The token is generated once into
+`~/.config/claude-pr-channel/ui-token` at mode 0600 and reused on every restart, so a
+bookmark keeps working.
+
 The editor builds its form from the same schema the plugin validates against, has a
 Raw JSON tab, and saves through the plugin's own loader — so it cannot write a file the
 plugin would then refuse. Writes go through a temporary file and a rename, so an
@@ -29,9 +35,11 @@ address to listen on:
 PR_CHANNEL_UI_HOST=100.64.0.1 bun run config   # this machine's VPN address
 ```
 
-`PR_CHANNEL_UI_PORT` moves the port (default 4319). `0.0.0.0` is refused: the editor
-has no login, and on a machine with a public interface the wildcard would put it on
-the internet. Give it one already-private address.
+`PR_CHANNEL_UI_PORT` moves the port (default 4319). `0.0.0.0` is refused: on a machine
+with a public interface the wildcard would put the editor on the internet. Give it one
+already-private address — the address decides who can reach the editor, the token decides
+who may edit. Bookmark the whole printed link on the phone, `#<token>` included; without
+the fragment the page loads and nothing else works.
 
 ### Keeping it running
 
@@ -50,11 +58,25 @@ comment means pushing code. Naming people replaces that default, so include your
 { "authors": { "mode": "listed", "allow": ["your-login", "a-colleague"] } }
 ```
 
+An edit or a dismissal reaches the session only when both the author and the person who
+made it are allowed — anyone with write access can rewrite someone else's comment, and
+any workflow on the repository can do it as `github-actions[bot]`, so a bot clears that
+second check only for its own comment. A deletion is not delivered at all: its text has
+just been withdrawn, and delivering it would ask the session to act on a retraction.
+
 **Stop an automated reviewer talking to the session.** CodeRabbit and friends are handled
 by default, because their findings are real review feedback.
 
 ```json
 { "authors": { "bots": "ignore" } }
+```
+
+**Let only one automated reviewer talk to the session.** `authors.mode` never restricts
+bots, so naming the ones you trust is the only way to refuse the rest. GitHub appends the
+`[bot]` suffix itself, so the login carries it.
+
+```json
+{ "authors": { "bots": "listed", "allowBots": ["coderabbitai[bot]"] } }
 ```
 
 **Track CI.** Name the workflows you care about — see [Workflows](#workflows).
@@ -160,6 +182,11 @@ cost of being all of them or none — there is no way to name one:
 { "events": { "checks": { "enabled": true, "wake": "failures" } } }
 ```
 
+A check name is delivered as untrusted text, and a details link that is not a plain
+`http(s)` URL is dropped rather than handed to the session: on a repository that accepts
+outside pull requests, the job name in the workflow file at the PR head is written by
+whoever opened it.
+
 It is off by default because on a repository with twenty checks it is twenty
 interruptions per push, and because every GitHub Actions job also reports as a check — so
 turning it on alongside a workflow list wakes the session twice for one failure.
@@ -237,7 +264,7 @@ These are the defaults in full:
       "enqueued": false, "dequeued": false
     }
   },
-  "authors": { "mode": "operator", "allow": [], "bots": "handle" },
+  "authors": { "mode": "operator", "allow": [], "bots": "handle", "allowBots": [] },
   "limits": {
     "maxPayloadBytes": 1048576,
     "rateLimit": { "maxDeliveries": 120, "windowMs": 60000 }
@@ -247,7 +274,9 @@ These are the defaults in full:
 ```
 
 `authors.mode` is `operator` (the `gh` login alone), `listed` (exactly `authors.allow`) or
-`anyone`. `events.checks.wake` is `failures`, `completed` or `all`.
+`anyone`, and it decides nothing about bots. `authors.bots` is `handle` (every bot),
+`listed` (exactly `authors.allowBots`) or `ignore` (none). `events.checks.wake` is
+`failures`, `completed` or `all`.
 
 ### The schema behind it
 

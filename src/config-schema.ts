@@ -45,7 +45,11 @@ const lifecycleShape = Object.fromEntries(
 // Shared by the config file and by the per-track arguments that override it, so the two
 // can never disagree about what a value is allowed to be.
 export const CiEventsEnum = z.enum(['failures', 'completed', 'all']);
-export const BotCommentsEnum = z.enum(['handle', 'ignore']);
+export const BotCommentsEnum = z.enum(['handle', 'listed', 'ignore']);
+// "listed" needs the logins that go with it, and only the config file carries those. A
+// track argument offering it could only ever mean "an empty list", which silently drops
+// every bot, so the argument offers the two values it can actually satisfy.
+export const TrackBotCommentsEnum = z.enum(['handle', 'ignore']);
 export const WorkflowWakeEnum = z.enum(['success', 'failures', 'completed', 'all']);
 
 const uniqueLogins = (values: string[]): string[] =>
@@ -128,7 +132,12 @@ const authorsSchema = z
       .meta({ description: 'GitHub logins, compared case-insensitively. Used when mode is "listed"; kept but unused under the other modes.' }),
     bots: BotCommentsEnum
       .default('handle')
-      .meta({ description: 'Automated reviewers ([bot] accounts): "handle" treats their findings like anyone else\'s, "ignore" drops them.' }),
+      .meta({ description: 'Automated reviewers ([bot] accounts): "handle" treats every bot\'s findings like anyone else\'s, "listed" accepts only the bots in allowBots, "ignore" drops them all. mode never restricts bots.' }),
+    allowBots: z
+      .array(z.string())
+      .overwrite(uniqueLogins)
+      .default([])
+      .meta({ description: 'Bot logins such as coderabbitai[bot], compared case-insensitively. GitHub appends the [bot] suffix itself, so write it. Used when bots is "listed"; kept but unused under the other values.' }),
   })
   .prefault({})
   .meta({ description: 'Who may drive this session through comments and reviews.' });
@@ -209,6 +218,13 @@ export const ConfigSchema = z
         message: 'required when authors.mode is "listed"; expected at least one GitHub login',
       });
     }
+    if (config.authors.bots === 'listed' && config.authors.allowBots.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['authors', 'allowBots'],
+        message: 'required when authors.bots is "listed"; expected at least one bot login',
+      });
+    }
   });
 
 // Fields that also accept null, so an "expected a string" message does not read as a lie.
@@ -257,9 +273,9 @@ export const TrackInputSchema = z.strictObject({
     .array(z.string())
     .optional()
     .meta({ description: 'Logins whose comments may reach the session, for this PR only. Overrides authors.mode/authors.allow; an empty array means anyone.' }),
-  bot_comments: BotCommentsEnum
+  bot_comments: TrackBotCommentsEnum
     .optional()
-    .meta({ description: 'Whether automated reviewers reach the session, for this PR only. Overrides authors.bots.' }),
+    .meta({ description: 'Whether automated reviewers reach the session, for this PR only. Overrides authors.bots. To trust only named bots, set authors.bots to "listed" with authors.allowBots in the config file: the list has nowhere to live in a track call.' }),
   replace: z.boolean().optional().meta({ description: 'Stop the PR this session currently tracks first.' }),
 });
 

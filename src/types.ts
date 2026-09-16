@@ -136,7 +136,7 @@ export function isGreen(state: CheckState | WorkflowRunState): boolean {
 export const REVIEW_STATES = ['approved', 'changes_requested', 'commented', 'dismissed'] as const;
 export type ReviewState = (typeof REVIEW_STATES)[number];
 
-export type CommentAction = 'created' | 'edited' | 'deleted';
+export type CommentAction = 'created' | 'edited';
 export type ReviewAction = 'submitted' | 'edited' | 'dismissed';
 
 interface PrEventBase {

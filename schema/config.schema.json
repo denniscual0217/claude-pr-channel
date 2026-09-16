@@ -258,12 +258,21 @@
         },
         "bots": {
           "default": "handle",
-          "description": "Automated reviewers ([bot] accounts): \"handle\" treats their findings like anyone else's, \"ignore\" drops them.",
+          "description": "Automated reviewers ([bot] accounts): \"handle\" treats every bot's findings like anyone else's, \"listed\" accepts only the bots in allowBots, \"ignore\" drops them all. mode never restricts bots.",
           "type": "string",
           "enum": [
             "handle",
+            "listed",
             "ignore"
           ]
+        },
+        "allowBots": {
+          "default": [],
+          "description": "Bot logins such as coderabbitai[bot], compared case-insensitively. GitHub appends the [bot] suffix itself, so write it. Used when bots is \"listed\"; kept but unused under the other values.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "additionalProperties": false

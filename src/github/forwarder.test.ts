@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { CONNECT_LINE, SECRET_ENV, createForwarder, lines, type ChildHandle, type SpawnForwarder } from './forwarder.js';
+import { CONNECT_LINE, createForwarder, lines, type ChildHandle, type SpawnForwarder } from './forwarder.js';
 
 const SECRET = 'test-only-fake-secret';
 
@@ -13,19 +13,16 @@ interface FakeSpawn {
   readonly spawn: SpawnForwarder;
   readonly children: FakeChild[];
   readonly argvs: string[][];
-  readonly envs: Record<string, string>[];
   latest(): FakeChild;
 }
 
 function fakeSpawn(behaviour: (child: FakeChild, attempt: number) => void = () => {}): FakeSpawn {
   const children: FakeChild[] = [];
   const argvs: string[][] = [];
-  const envs: Record<string, string>[] = [];
   let nextPid = 5000;
 
-  const spawn: SpawnForwarder = (args, env) => {
+  const spawn: SpawnForwarder = (args) => {
     argvs.push([...args]);
-    envs.push({ ...env });
     const queue: string[] = [];
     let push: ((line: string) => void) | null = null;
     let finish: (() => void) | null = null;
@@ -71,7 +68,7 @@ function fakeSpawn(behaviour: (child: FakeChild, attempt: number) => void = () =
     return child;
   };
 
-  return { spawn, children, argvs, envs, latest: () => children[children.length - 1] as FakeChild };
+  return { spawn, children, argvs, latest: () => children[children.length - 1] as FakeChild };
 }
 
 function build(fake: FakeSpawn, overrides: Record<string, unknown> = {}) {
@@ -94,7 +91,7 @@ function build(fake: FakeSpawn, overrides: Record<string, unknown> = {}) {
 }
 
 describe('the forwarder', () => {
-  it('connects when gh reports it is forwarding, and passes the secret through the environment', async () => {
+  it('connects when gh reports it is forwarding', async () => {
     const fake = fakeSpawn((child) => setTimeout(() => child.emit(`${CONNECT_LINE}\n`), 5));
     const { forwarder } = build(fake);
 
@@ -109,9 +106,6 @@ describe('the forwarder', () => {
       '--url=http://127.0.0.1:4321/webhook',
       `--secret=${SECRET}`,
     ]);
-    // gh only takes the secret on argv, which is unavoidable; it is handed over through
-    // the child's environment as well so nothing of ours has to build that argv twice.
-    expect(fake.envs[0]).toEqual({ [SECRET_ENV]: SECRET });
   });
 
   it('fails with gh\'s own last line when it never connects', async () => {

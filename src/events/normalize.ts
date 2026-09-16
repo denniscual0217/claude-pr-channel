@@ -26,7 +26,7 @@ export interface UnresolvedHead {
   readonly headSha: string;
 }
 
-export type BotComments = 'handle' | 'ignore';
+export type BotComments = 'handle' | 'listed' | 'ignore';
 
 export interface NormalizeOptions {
   // check_run / check_suite / workflow_run / status payloads name no PR when the run was
@@ -40,8 +40,11 @@ export interface NormalizeOptions {
   // Whose comments and reviews may reach the session. null allows every human author.
   // Acting on a comment means pushing code, so this is a trust boundary.
   readonly commentAuthors?: ReadonlySet<string> | null;
-  // Automated reviewers are handled by default; 'ignore' drops them.
+  // Automated reviewers are handled by default; 'ignore' drops them, 'listed' narrows
+  // them to botAuthors. mode/commentAuthors never applies to a bot.
   readonly botComments?: BotComments;
+  // Which bot logins may reach the session. null accepts every bot botComments allows.
+  readonly botAuthors?: ReadonlySet<string> | null;
   // Workflow names to watch, matched exactly and case-sensitively. Nothing is matched
   // until one is configured: there is no workflow every repository has.
   readonly workflowNames?: ReadonlySet<string> | null;
@@ -100,12 +103,46 @@ function isBotUser(raw: unknown): boolean {
   return (str(user['login']) ?? '').endsWith('[bot]');
 }
 
-// An automated reviewer is feedback on this PR and is handled like any other. A person
-// who is not on the allowlist is not: answering a colleague is the author's job, not this
-// session's. Bots that only narrate get no reply anyway, because an event carrying
-// nothing to act on is answered with silence.
+// An automated reviewer is feedback on this PR and is handled like any other unless the
+// operator has narrowed it. A person who is not on the allowlist is not: answering a
+// colleague is the author's job, not this session's. Bots that only narrate get no reply
+// anyway, because an event carrying nothing to act on is answered with silence.
 function senderAllowed(ctx: Ctx, raw: unknown): boolean {
-  if (isBotUser(raw)) return ctx.options.botComments !== 'ignore';
+  if (isBotUser(raw)) return botAllowed(ctx, raw);
+  const allowed = ctx.options.commentAuthors;
+  if (allowed === undefined || allowed === null) return true;
+  const login = str(obj(raw)?.['login'] ?? null);
+  return login !== null && allowed.has(login.toLowerCase());
+}
+
+function botAllowed(ctx: Ctx, raw: unknown): boolean {
+  if (ctx.options.botComments === 'ignore') return false;
+  const listed = ctx.options.botAuthors;
+  if (listed === undefined || listed === null) return true;
+  const login = str(obj(raw)?.['login'] ?? null);
+  return login !== null && listed.has(login.toLowerCase());
+}
+
+// The person who edits or deletes a comment is not its author: GitHub lets anyone with
+// write access rewrite anyone else's text, which would otherwise arrive here under the
+// author's name. On created/submitted the two are the same account, so this only bites
+// when someone else touched the comment.
+//
+// A bot sender is held to a stricter rule than a bot author. Any workflow on the
+// repository can PATCH another user's comment as github-actions[bot], so letting the
+// handled-bot branch satisfy the sender leg would hand the whole gate to anyone who can
+// push a workflow. A bot may therefore edit only its own comment; editing a human's is
+// someone speaking as that human, and has to clear the human allowlist.
+function partiesAllowed(ctx: Ctx, author: unknown): boolean {
+  if (!senderAllowed(ctx, author)) return false;
+  const sender = ctx.body['sender'];
+  if (isBotUser(sender) && !isBotUser(author)) return humanAllowed(ctx, sender);
+  if (isBotUser(sender) && loginOf(sender) !== loginOf(author)) return false;
+  return senderAllowed(ctx, sender);
+}
+
+// The author allowlist alone, with no bot short-circuit.
+function humanAllowed(ctx: Ctx, raw: unknown): boolean {
   const allowed = ctx.options.commentAuthors;
   if (allowed === undefined || allowed === null) return true;
   const login = str(obj(raw)?.['login'] ?? null);
@@ -123,7 +160,7 @@ function normalizeIssueComment(ctx: Ctx): PrEvent | null {
   // The worker's own reply arrives back through the webhook; delivering it would have
   // the session answer itself.
   if (isClaudeAuthored(str(comment['body']) ?? '')) return null;
-  if (!senderAllowed(ctx, comment['user'])) return null;
+  if (!partiesAllowed(ctx, comment['user'])) return null;
   return {
     kind: 'pr_comment',
     prRef: { repo: ctx.repo, prNumber },
@@ -146,7 +183,7 @@ function normalizeReview(ctx: Ctx): PrEvent | null {
   const reviewId = num(review['id']);
   if (prNumber === null || reviewId === null) return null;
   if (isClaudeAuthored(str(review['body']) ?? '')) return null;
-  if (!senderAllowed(ctx, review['user'])) return null;
+  if (!partiesAllowed(ctx, review['user'])) return null;
   // A review submitted with no body is just the envelope around its inline comments,
   // which arrive as their own events. Delivering it too asks the session to respond to
   // a review that says nothing.
@@ -174,7 +211,7 @@ function normalizeReviewComment(ctx: Ctx): PrEvent | null {
   const commentId = num(comment['id']);
   if (prNumber === null || commentId === null) return null;
   if (isClaudeAuthored(str(comment['body']) ?? '')) return null;
-  if (!senderAllowed(ctx, comment['user'])) return null;
+  if (!partiesAllowed(ctx, comment['user'])) return null;
   return {
     kind: 'pr_review_comment',
     prRef: { repo: ctx.repo, prNumber },
@@ -265,11 +302,11 @@ function normalizeCheckRun(ctx: Ctx): readonly PrEvent[] {
     headSha,
     actorLogin: ctx.actor,
     occurredAtIso: iso(run['completed_at'], run['started_at']) ?? ctx.now(),
-    htmlUrl: str(run['html_url']),
+    htmlUrl: url(run['html_url']),
     checkName,
     checkRunId: num(run['id']),
     state,
-    detailsUrl: str(run['details_url']) ?? str(run['html_url']),
+    detailsUrl: url(run['details_url']) ?? url(run['html_url']),
   };
   return prRefsForSha(ctx, run['pull_requests'], headSha, 'ci_check').map((prRef) => ({
     kind: 'ci_check',
@@ -327,7 +364,7 @@ function normalizeWorkflowRun(ctx: Ctx): readonly PrEvent[] {
     headSha,
     actorLogin: loginOf(run['triggering_actor']) ?? loginOf(run['actor']) ?? ctx.actor,
     occurredAtIso: iso(run['updated_at'], run['run_started_at'], run['created_at']) ?? ctx.now(),
-    htmlUrl: str(run['html_url']),
+    htmlUrl: url(run['html_url']),
     workflowName: name,
     workflowRunId,
     runAttempt: num(run['run_attempt']) ?? 1,
@@ -352,11 +389,11 @@ function normalizeStatus(ctx: Ctx): readonly PrEvent[] {
     headSha,
     actorLogin: ctx.actor,
     occurredAtIso: iso(ctx.body['updated_at'], ctx.body['created_at']) ?? ctx.now(),
-    htmlUrl: str(ctx.body['target_url']),
+    htmlUrl: url(ctx.body['target_url']),
     checkName: context,
     checkRunId: null,
     state,
-    detailsUrl: str(ctx.body['target_url']),
+    detailsUrl: url(ctx.body['target_url']),
   };
   return prRefsForSha(ctx, undefined, headSha, 'ci_check').map((prRef) => ({ kind: 'ci_check', prRef, ...base }));
 }
@@ -417,8 +454,11 @@ function toConclusion(raw: string): CheckConclusion {
   return (CHECK_CONCLUSIONS as readonly string[]).includes(raw) ? (raw as CheckConclusion) : 'failure';
 }
 
+// A deletion is a retraction, so the body must not arrive as a fresh instruction — the
+// prompt would tell the session to act on text its author has just withdrawn, and a
+// post-then-delete would deliver the same instruction twice.
 function commentAction(raw: string | null): CommentAction | null {
-  return raw === 'created' || raw === 'edited' || raw === 'deleted' ? raw : null;
+  return raw === 'created' || raw === 'edited' ? raw : null;
 }
 
 function reviewAction(raw: string | null): ReviewAction | null {
@@ -438,6 +478,26 @@ function obj(value: unknown): Json | null {
 
 function str(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+// A CI app chooses these and the session is told to paste one into a public comment
+// verbatim, so anything that is not a plain fetchable link is dropped rather than
+// rendered. Plain http stays valid: a self-hosted Jenkins is exactly this feature's case.
+// The danger in a CI-supplied URL is a scheme that executes, or a line break that lets it
+// pose as another line of the prompt. A space is neither: self-hosted Jenkins puts job
+// names in the path routinely, and dropping the link there costs the session the one
+// reference the reply should carry. Spaces are encoded, newlines and controls refused.
+function url(value: unknown): string | null {
+  const raw = str(value);
+  if (raw === null || /[\u0000-\u001f\u007f]/.test(raw)) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+  return raw.replace(/ /g, '%20');
 }
 
 function num(value: unknown): number | null {

@@ -177,6 +177,12 @@ describe('a config that cannot be used', () => {
     );
   });
 
+  it('refuses bots "listed" with no bot listed', () => {
+    expect(problem('{"authors": {"bots": "listed"}}')).toBe(
+      'authors.allowBots: required when authors.bots is "listed"; expected at least one bot login',
+    );
+  });
+
   it('reports every problem at once, one per line', () => {
     const lines = problem('{"version": 2, "limits": {"rateLimit": {"windowMs": 0}}, "nope": 1}').split('\n');
 
@@ -226,7 +232,7 @@ describe('resolveTracking', () => {
       checks: { enabled: true, wake: 'failures' },
       workflows: [{ name: 'Ship It', wake: 'success' }],
     },
-    authors: { mode: 'listed', allow: ['sam-reviewer'], bots: 'ignore' },
+    authors: { mode: 'listed', allow: ['sam-reviewer'], bots: 'ignore', allowBots: [] },
   };
 
   it('takes the argument over the file, and the file over the default', () => {
@@ -252,12 +258,25 @@ describe('resolveTracking', () => {
   });
 
   it('honours each author mode', () => {
-    const anyone: Config = { ...DEFAULT_CONFIG, authors: { mode: 'anyone', allow: [], bots: 'handle' } };
+    const anyone: Config = { ...DEFAULT_CONFIG, authors: { mode: 'anyone', allow: [], bots: 'handle', allowBots: [] } };
 
     expect(resolveTracking(anyone, {}, 'octo-worker').commentAuthors).toBeNull();
     expect([...(resolveTracking(listed, {}, 'octo-worker').commentAuthors ?? [])]).toEqual(['sam-reviewer']);
     // No gh login and the operator mode leaves nobody to name, so nobody is narrowed out.
     expect(resolveTracking(DEFAULT_CONFIG, {}, null).commentAuthors).toBeNull();
+  });
+
+  it('names the bots to hear only when bots are listed', () => {
+    const onlyRabbit: Config = {
+      ...DEFAULT_CONFIG,
+      authors: { mode: 'operator', allow: [], bots: 'listed', allowBots: ['coderabbitai[bot]'] },
+    };
+
+    expect([...(resolveTracking(onlyRabbit, {}, 'octo-worker').botAuthors ?? [])]).toEqual(['coderabbitai[bot]']);
+    expect(resolveTracking(onlyRabbit, { bot_comments: 'handle' }, 'octo-worker').botAuthors).toBeNull();
+    expect(resolveTracking(DEFAULT_CONFIG, {}, 'octo-worker').botAuthors).toBeNull();
+    expect(resolveTracking(listed, {}, 'octo-worker').botAuthors).toBeNull();
+    expect(resolveTracking(onlyRabbit, {}, 'octo-worker').origins.botComments).toBe('config');
   });
 
   it('keeps an empty comment_authors argument meaning anyone', () => {

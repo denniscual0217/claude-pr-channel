@@ -92,6 +92,7 @@ function harness(options: HarnessOptions = {}): Harness {
     },
     commentAuthors: null,
     botComments: 'handle',
+    botAuthors: null,
     workflowNames: new Set(options.watchWorkflow === null || options.watchWorkflow === undefined ? [] : [options.watchWorkflow]),
     logger: (level, event, fields = {}) => logs.push({ level, event, fields }),
     onTerminal: (action) => terminals.push(action),

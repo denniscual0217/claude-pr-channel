@@ -922,6 +922,16 @@ describe('the config file', () => {
     expect(await h.tracking.status()).toContain('ci_events=all (argument)');
   });
 
+  it('reports the listed bots on the filters line', async () => {
+    const h = harness({
+      config: { authors: { mode: 'operator', allow: [], bots: 'listed', allowBots: ['coderabbitai[bot]'] } },
+    });
+
+    const text = await h.tracking.track({ pr: '42', repo: FIXTURE_REPO });
+
+    expect(text).toContain('bot_comments=listed: coderabbitai[bot] (config)');
+  });
+
   it('skips the startup sweep when the config turns it off', async () => {
     const swept = harness();
     await swept.tracking.track({ pr: '42', repo: FIXTURE_REPO });
