@@ -243,6 +243,25 @@ It is off by default because on a repository with twenty checks it is twenty
 interruptions per push, and because every GitHub Actions job also reports as a check — so
 turning it on alongside a workflow list wakes the session twice for one failure.
 
+## How the session signs its comments
+
+Every comment the session posts begins with `**Claude:**`, so a person reading the pull
+request can tell which comments are the agent's. Change it:
+
+```json
+{ "replies": { "prefix": "**Dennis bot:**" } }
+```
+
+It is not only a label. A delivery whose body starts with the prefix is the session's own
+reply arriving back through the webhook, and dropping it is what stops the session
+answering itself forever — so whatever you set is both what the session writes and what
+the plugin looks for. Pick something no human would open a comment with, and keep it
+short: it is prepended to every reply.
+
+The default is always recognised as well, even after you change it. Replies posted under
+`**Claude:**` are still on the pull request, and a session that stopped recognising them
+would start answering its own past comments.
+
 ## What beats what
 
 Three layers, most specific first:
@@ -318,6 +337,7 @@ These are the defaults in full:
     }
   },
   "authors": { "mode": "operator", "allow": [], "bots": "handle", "allowBots": [] },
+  "replies": { "prefix": "**Claude:**" },
   "limits": {
     "maxPayloadBytes": 1048576,
     "rateLimit": { "maxDeliveries": 120, "windowMs": 60000 }

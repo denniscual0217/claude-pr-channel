@@ -55,7 +55,7 @@ describe('renderEventPrompt', () => {
     expect(comment).toContain('--body "**Claude:** <your reply>"');
     expect(review).toContain('-f body="**Claude:** <your reply>"');
     for (const prompt of [comment, review]) {
-      expect(prompt).toContain('Start every comment with **Claude:**, in bold');
+      expect(prompt).toContain('Start every comment with **Claude:**, exactly as written');
     }
   });
 
@@ -367,6 +367,22 @@ describe('unattended work', () => {
   });
 });
 
+describe('the reply prefix', () => {
+  const event = envelope('pr_comment', { action: 'created', commentId: 7, untrustedBody: untrusted('fix this') });
+
+  it('signs the reply commands with the configured prefix', () => {
+    const prompt = renderEventPrompt(event, { replyPrefix: '**Dennis bot:**' });
+
+    expect(prompt).toContain('Start every comment with **Dennis bot:**, exactly as written');
+    expect(prompt).toContain('--body "**Dennis bot:** <your reply>"');
+    expect(prompt).not.toContain('**Claude:**');
+  });
+
+  it('falls back to the default when none is configured', () => {
+    expect(renderEventPrompt(event)).toContain('**Claude:**');
+  });
+});
+
 describe('operator instructions for a workflow', () => {
   const run = (state: object, htmlUrl: string | null = null) =>
     envelope('workflow', {
@@ -386,7 +402,7 @@ describe('operator instructions for a workflow', () => {
     expect(prompt).not.toContain('unrelated to this PR');
     // The guardrails the operator cannot delete by accident.
     expect(prompt).toContain('Act now, on your own');
-    expect(prompt).toContain('Start every comment with **Claude:**, in bold');
+    expect(prompt).toContain('Start every comment with **Claude:**, exactly as written');
     expect(prompt).not.toContain('--- begin untrusted');
   });
 

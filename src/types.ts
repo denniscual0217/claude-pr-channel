@@ -33,8 +33,12 @@ export interface UntrustedGithubText {
 // them would have a session answer itself, forever.
 export const CLAUDE_REPLY_PREFIX = '**Claude:**';
 
-export function isClaudeAuthored(text: string): boolean {
-  return text.trimStart().startsWith(CLAUDE_REPLY_PREFIX);
+// The default is always recognised, even when the operator has configured another one:
+// comments posted under the old prefix are still on the pull request, and a session that
+// stopped recognising them would start answering its own past replies.
+export function isClaudeAuthored(text: string, prefix: string = CLAUDE_REPLY_PREFIX): boolean {
+  const body = text.trimStart();
+  return body.startsWith(prefix) || body.startsWith(CLAUDE_REPLY_PREFIX);
 }
 
 export function untrusted(text: string): UntrustedGithubText {

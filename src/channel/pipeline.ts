@@ -35,6 +35,7 @@ export interface PipelineOptions {
   readonly botAuthors: ReadonlySet<string> | null;
   readonly workflowNames: ReadonlySet<string>;
   readonly workflowInstructions: ReadonlyMap<string, OperatorText>;
+  readonly replyPrefix: string;
   readonly logger?: Logger;
   readonly now?: () => Date;
   // Called after the terminal event has been handed to the session, so tracking can stop.
@@ -97,6 +98,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       botComments: options.botComments,
       botAuthors: options.botAuthors,
       workflowNames: options.workflowNames,
+      replyPrefix: options.replyPrefix,
     });
 
     for (const event of events) {
@@ -155,7 +157,7 @@ export function createPipeline(options: PipelineOptions): Pipeline {
       await options.notifier.notification({
         method: 'notifications/claude/channel',
         params: {
-          content: renderEventPrompt(delivered, { workflowInstructions: options.workflowInstructions }),
+          content: renderEventPrompt(delivered, { workflowInstructions: options.workflowInstructions, replyPrefix: options.replyPrefix }),
           meta: eventMeta(delivered),
         },
       });

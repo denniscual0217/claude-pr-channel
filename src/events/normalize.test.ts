@@ -598,6 +598,33 @@ describe('self-authored replies', () => {
     expect(events).toHaveLength(1);
   });
 
+  it('ignores its own reply under a configured prefix', () => {
+    const own = (body: string, options = {}) =>
+      normalizeWebhookAll('issue_comment', {
+        action: 'created',
+        issue: { number: 42, pull_request: {} },
+        comment: { id: 1, body, user: { login: 'sam-reviewer' } },
+        repository: { full_name: 'acme-labs/widget-service' },
+      }, options);
+
+    expect(own('**Dennis bot:** Fixed and pushed.', { replyPrefix: '**Dennis bot:**' })).toEqual([]);
+    // A human comment is still a comment: the prefix has to be at the start.
+    expect(own('I asked **Dennis bot:** to look', { replyPrefix: '**Dennis bot:**' })).toHaveLength(1);
+  });
+
+  // Replies posted before the prefix was changed are still on the pull request. A session
+  // that stopped recognising them would start answering its own past comments.
+  it('still ignores the default prefix after the operator configures another', () => {
+    const events = normalizeWebhookAll('issue_comment', {
+      action: 'created',
+      issue: { number: 42, pull_request: {} },
+      comment: { id: 1, body: '**Claude:** Fixed and pushed.', user: { login: 'sam-reviewer' } },
+      repository: { full_name: 'acme-labs/widget-service' },
+    }, { replyPrefix: '**Dennis bot:**' });
+
+    expect(events).toEqual([]);
+  });
+
   it('ignores a review the worker itself submitted', () => {
     const events = normalizeWebhookAll('pull_request_review', {
       action: 'submitted',

@@ -5,7 +5,7 @@ import { DEFAULT_CONFIG, resolveTracking } from '../src/config.js';
 import { DeliveryDeduper } from '../src/events/dedupe.js';
 import { HeadTracker } from '../src/events/head.js';
 import type { LogLevel } from '../src/log.js';
-import { operatorAuthored, UNTRUSTED_TEXT_NOTICE } from '../src/types.js';
+import { CLAUDE_REPLY_PREFIX, operatorAuthored, UNTRUSTED_TEXT_NOTICE } from '../src/types.js';
 import {
   FIXTURE_DEPLOY_WORKFLOW,
   FIXTURE_HEAD_SHA,
@@ -60,6 +60,7 @@ interface HarnessOptions {
   readonly watchWorkflow?: string | null;
   // Operator-written instructions for watchWorkflow, as a config file would carry them.
   readonly instructions?: string;
+  readonly replyPrefix?: string;
 }
 
 function harness(options: HarnessOptions = {}): Harness {
@@ -101,6 +102,7 @@ function harness(options: HarnessOptions = {}): Harness {
         ? []
         : [[options.watchWorkflow, operatorAuthored(options.instructions)]],
     ),
+    replyPrefix: options.replyPrefix ?? CLAUDE_REPLY_PREFIX,
     logger: (level, event, fields = {}) => logs.push({ level, event, fields }),
     onTerminal: (action) => terminals.push(action),
   });

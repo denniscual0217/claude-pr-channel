@@ -301,6 +301,7 @@ export class Tracking {
       botAuthors: settings.botAuthors,
       workflowNames: settings.workflowNames,
       workflowInstructions: settings.workflowInstructions,
+      replyPrefix: settings.replyPrefix,
       logger: this.#log,
       now: this.#now,
       onTerminal: (action) => {

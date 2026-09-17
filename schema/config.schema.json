@@ -284,6 +284,21 @@
       },
       "additionalProperties": false
     },
+    "replies": {
+      "description": "How the session signs the comments it posts.",
+      "default": {},
+      "type": "object",
+      "properties": {
+        "prefix": {
+          "default": "**Claude:**",
+          "description": "How every comment the session posts begins, so a person reading the pull request can tell which comments are the agent's. It is also how the plugin recognises its own replies and declines to answer them. Markdown works: the default is **Claude:**. Pick something no human would open a comment with, and keep it short — it is prepended to every reply.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        }
+      },
+      "additionalProperties": false
+    },
     "limits": {
       "description": "Limits the loopback listener enforces on incoming deliveries.",
       "default": {},

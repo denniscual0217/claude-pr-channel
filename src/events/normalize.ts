@@ -48,6 +48,9 @@ export interface NormalizeOptions {
   // Workflow names to watch, matched exactly and case-sensitively. Nothing is matched
   // until one is configured: there is no workflow every repository has.
   readonly workflowNames?: ReadonlySet<string> | null;
+  // How the session signs its comments. A delivery that starts with it is the session's
+  // own reply coming back, and routing it would have the session answer itself.
+  readonly replyPrefix?: string;
 }
 
 export function normalizeWebhook(eventName: string, payload: unknown, options: NormalizeOptions = {}): PrEvent | null {
@@ -159,7 +162,7 @@ function normalizeIssueComment(ctx: Ctx): PrEvent | null {
   if (prNumber === null || commentId === null) return null;
   // The worker's own reply arrives back through the webhook; delivering it would have
   // the session answer itself.
-  if (isClaudeAuthored(str(comment['body']) ?? '')) return null;
+  if (isClaudeAuthored(str(comment['body']) ?? '', ctx.options.replyPrefix)) return null;
   if (!partiesAllowed(ctx, comment['user'])) return null;
   return {
     kind: 'pr_comment',
@@ -182,7 +185,7 @@ function normalizeReview(ctx: Ctx): PrEvent | null {
   const prNumber = num(pr['number']);
   const reviewId = num(review['id']);
   if (prNumber === null || reviewId === null) return null;
-  if (isClaudeAuthored(str(review['body']) ?? '')) return null;
+  if (isClaudeAuthored(str(review['body']) ?? '', ctx.options.replyPrefix)) return null;
   if (!partiesAllowed(ctx, review['user'])) return null;
   // A review submitted with no body is just the envelope around its inline comments,
   // which arrive as their own events. Delivering it too asks the session to respond to
@@ -210,7 +213,7 @@ function normalizeReviewComment(ctx: Ctx): PrEvent | null {
   const prNumber = num(pr['number']);
   const commentId = num(comment['id']);
   if (prNumber === null || commentId === null) return null;
-  if (isClaudeAuthored(str(comment['body']) ?? '')) return null;
+  if (isClaudeAuthored(str(comment['body']) ?? '', ctx.options.replyPrefix)) return null;
   if (!partiesAllowed(ctx, comment['user'])) return null;
   return {
     kind: 'pr_review_comment',

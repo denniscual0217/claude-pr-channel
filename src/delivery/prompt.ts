@@ -8,13 +8,14 @@ import type {
   WorkflowPlaceholder,
   WorkflowRunState,
 } from '../types.js';
-import { PLACEHOLDER_PATTERN, untrusted } from '../types.js';
+import { CLAUDE_REPLY_PREFIX, PLACEHOLDER_PATTERN, untrusted } from '../types.js';
 
 export interface PromptContext {
   readonly workflowInstructions: ReadonlyMap<string, OperatorText>;
+  readonly replyPrefix: string;
 }
 
-const EMPTY_CONTEXT: PromptContext = { workflowInstructions: new Map() };
+const EMPTY_CONTEXT: PromptContext = { workflowInstructions: new Map(), replyPrefix: CLAUDE_REPLY_PREFIX };
 
 const NEEDS_ATTENTION = new Set(['failure', 'timed_out', 'action_required', 'startup_failure']);
 
@@ -79,13 +80,12 @@ function workflowValues(event: WorkflowEvent): Record<WorkflowPlaceholder, strin
 
 // Every reply the session posts on GitHub is attributed, so a human reading the PR can
 // tell at a glance which comments came from the worker rather than from a person.
-const REPLY_PREFIX = '**Claude:** ';
 
 // Every event carries this, so it is kept short on purpose: the session has to read it
 // before it can act, and a rule it skims is a rule it does not follow. Each line is here
 // because its absence cost something once — a silent CI failure, a duplicate comment, a
 // confident link to the wrong thread.
-function respond(lines: readonly string[]): string {
+function respond(lines: readonly string[], prefix: string): string {
   return [
     // The author reads the PR, not the terminal, so anything asked here waits forever.
     'Act now, on your own. Nobody is watching the terminal: change the code, run the ' +
@@ -104,7 +104,7 @@ function respond(lines: readonly string[]): string {
     'Never block. Either act, or post and move on.',
     'Now:',
     ...lines.map((line) => `- ${line}`),
-    `- Start every comment with ${REPLY_PREFIX.trim()}, in bold.`,
+    `- Start every comment with ${prefix}, exactly as written.`,
     '- One comment, one place: an inline review comment in its own thread, everything ' +
       'else top-level with "gh pr comment". Never post the same answer twice, and never ' +
       'answer in a thread the event did not come from.',
@@ -115,8 +115,8 @@ function respond(lines: readonly string[]): string {
   ].join('\n');
 }
 
-function conversationReply(prRef: PrRef): string {
-  return `Reply on the PR with: gh pr comment ${prRef.prNumber} --repo ${prRef.repo} --body "${REPLY_PREFIX}<your reply>"`;
+function conversationReply(prRef: PrRef, prefix: string): string {
+  return `Reply on the PR with: gh pr comment ${prRef.prNumber} --repo ${prRef.repo} --body "${prefix} <your reply>"`;
 }
 
 // A top-level comment floats free of what it answers, so it carries the link. A thread
@@ -141,10 +141,10 @@ function body(envelope: EventEnvelope, context: PromptContext): string[] {
         fence(envelope.id, 'comment', event.untrustedBody),
         respond([
           'If it asks for a code change, make it, then commit and push.',
-          conversationReply(event.prRef),
+          conversationReply(event.prRef, context.replyPrefix),
           ...linkBack(event.htmlUrl),
           'If you are not going to do what it asks, say so and why.',
-        ]),
+        ], context.replyPrefix),
       ];
 
     case 'pr_review':
@@ -153,10 +153,10 @@ function body(envelope: EventEnvelope, context: PromptContext): string[] {
         fence(envelope.id, 'review', event.untrustedBody),
         respond([
           'Address the feedback in code, then commit and push.',
-          conversationReply(event.prRef),
+          conversationReply(event.prRef, context.replyPrefix),
           ...linkBack(event.htmlUrl),
           'Push before you reply, so the reply is true when it lands.',
-        ]),
+        ], context.replyPrefix),
       ];
 
     case 'pr_review_comment':
@@ -166,10 +166,10 @@ function body(envelope: EventEnvelope, context: PromptContext): string[] {
         fence(envelope.id, 'review comment', event.untrustedBody),
         respond([
           'Make the change there if warranted, then commit and push.',
-          `Reply IN THE THREAD ONLY: gh api repos/${repo}/pulls/${prNumber}/comments/${event.commentId}/replies -f body="${REPLY_PREFIX}<your reply>"`,
+          `Reply IN THE THREAD ONLY: gh api repos/${repo}/pulls/${prNumber}/comments/${event.commentId}/replies -f body="${context.replyPrefix} <your reply>"`,
           'That thread reply is the whole response: no top-level comment, no link, no "answering X" line.',
           'If you disagree, say why in the thread instead of changing the code.',
-        ]),
+        ], context.replyPrefix),
       ];
 
     case 'ci_check':
@@ -181,10 +181,10 @@ function body(envelope: EventEnvelope, context: PromptContext): string[] {
           ? respond([
               `Read the failure first: gh run view --repo ${repo} --log-failed`,
               'Fix the cause, confirm it passes locally, then commit and push.',
-              `Report it TOP-LEVEL: ${conversationReply(event.prRef)}`,
+              `Report it TOP-LEVEL: ${conversationReply(event.prRef, context.replyPrefix)}`,
               ...linkBack(event.detailsUrl),
               'If the failure is pre-existing or unrelated, say so there instead of forcing a fix.',
-            ])
+            ], context.replyPrefix)
           : 'No action needed unless it blocks your current step.',
       ];
 
@@ -193,7 +193,7 @@ function body(envelope: EventEnvelope, context: PromptContext): string[] {
         `Workflow "${event.workflowName}" on ${where} is ${describeState(event.state)} for head ${event.headSha} ` +
         `(run ${event.workflowRunId}, attempt ${event.runAttempt}).`;
       const custom = context.workflowInstructions.get(event.workflowName);
-      if (custom !== undefined) return [header, respond(instruct(custom, workflowValues(event)))];
+      if (custom !== undefined) return [header, respond(instruct(custom, workflowValues(event)), context.replyPrefix)];
       return [
         header,
         ...(event.state.status !== 'completed'
@@ -203,11 +203,11 @@ function body(envelope: EventEnvelope, context: PromptContext): string[] {
                 respond([
                   `Read the run first: gh run view ${event.workflowRunId} --repo ${repo} --log-failed`,
                   'Fix the cause, confirm it passes locally, then commit and push.',
-                  `Report it TOP-LEVEL: ${conversationReply(event.prRef)}`,
+                  `Report it TOP-LEVEL: ${conversationReply(event.prRef, context.replyPrefix)}`,
                   ...linkBack(event.htmlUrl),
                   'A workflow can fail for reasons unrelated to this PR. Decide which it is ' +
                     'yourself, and if it is unrelated say so there instead of chasing it.',
-                ]),
+                ], context.replyPrefix),
               ]
             : [
                 'Its run for this head succeeded, so what it produces is ready. If your work ' +
@@ -229,12 +229,13 @@ function body(envelope: EventEnvelope, context: PromptContext): string[] {
   }
 }
 
-export function renderEventPrompt(envelope: EventEnvelope, context: PromptContext = EMPTY_CONTEXT): string {
+export function renderEventPrompt(envelope: EventEnvelope, context: Partial<PromptContext> = {}): string {
+  const resolved: PromptContext = { ...EMPTY_CONTEXT, ...context };
   const stale = envelope.stale
     ? [
         `This refers to head ${envelope.headSha ?? 'unknown'}, which is no longer this PR's current head.`,
         'Treat it as history, not as a signal about the code you are working on now. Do not reply to it.',
       ]
     : [];
-  return ['[pr-channel]', ...body(envelope, context), ...stale].join('\n\n');
+  return ['[pr-channel]', ...body(envelope, resolved), ...stale].join('\n\n');
 }

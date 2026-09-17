@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  CLAUDE_REPLY_PREFIX,
   CORE_LIFECYCLE_ACTIONS,
   PR_LIFECYCLE_ACTIONS,
   WORKFLOW_PLACEHOLDERS,
@@ -159,6 +160,23 @@ const authorsSchema = z
   .prefault({})
   .meta({ description: 'Who may drive this session through comments and reviews.' });
 
+// The prefix is not decoration: a delivery whose body starts with it is the session's own
+// reply arriving back through the webhook, and dropping it is what stops a session
+// answering itself forever. Whatever is set here is both what the session is told to
+// write and what the plugin looks for.
+const repliesSchema = z
+  .strictObject({
+    prefix: z
+      .string()
+      .trim()
+      .min(1)
+      .max(40)
+      .default(CLAUDE_REPLY_PREFIX)
+      .meta({ description: `How every comment the session posts begins, so a person reading the pull request can tell which comments are the agent's. It is also how the plugin recognises its own replies and declines to answer them. Markdown works: the default is ${CLAUDE_REPLY_PREFIX}. Pick something no human would open a comment with, and keep it short — it is prepended to every reply.` }),
+  })
+  .prefault({})
+  .meta({ description: 'How the session signs the comments it posts.' });
+
 const limitsSchema = z
   .strictObject({
     maxPayloadBytes: z
@@ -213,6 +231,7 @@ export const ConfigSchema = z
       .meta({ description: 'Config format version. 1 is the only accepted value; it is bumped only for an incompatible change of shape.' }),
     events: eventsSchema,
     authors: authorsSchema,
+  replies: repliesSchema,
     limits: limitsSchema,
     cache: cacheSchema,
   })
