@@ -77,6 +77,11 @@ describe('the committed JSON Schema', () => {
     expect(at('limits.maxPayloadBytes')).toMatchObject({ type: 'integer', minimum: 1, maximum: 26_214_400 });
     expect(ConfigSchema.safeParse({ limits: { maxPayloadBytes: 26_214_401 } }).success).toBe(false);
     expect(at('cache.dir')['type']).toEqual(['string', 'null']);
+
+    const workflow = (at('events.workflows')['items'] as Node)['properties'] as Record<string, Node>;
+    expect(workflow['instructions']).toMatchObject({ type: 'string', minLength: 1, maxLength: 1000, 'x-multiline': true });
+    expect(ConfigSchema.safeParse({ events: { workflows: [{ name: 'CI', instructions: 'x'.repeat(1001) }] } }).success).toBe(false);
+    expect(ConfigSchema.safeParse({ events: { workflows: [{ name: 'CI', instructions: 'Read {{run_url}}' }] } }).success).toBe(true);
   });
 });
 

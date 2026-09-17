@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import { CORE_LIFECYCLE_ACTIONS, PR_LIFECYCLE_ACTIONS, type PrLifecycleAction } from './types.js';
+import {
+  CORE_LIFECYCLE_ACTIONS,
+  PR_LIFECYCLE_ACTIONS,
+  WORKFLOW_PLACEHOLDERS,
+  unknownPlaceholders,
+  type PrLifecycleAction,
+} from './types.js';
 
 // The zod tree is the single source of truth: validation and the JSON Schema a UI builds
 // its form from are the same definition, so they cannot drift.
@@ -107,6 +113,17 @@ const eventsSchema = z
           wake: WorkflowWakeEnum.default('success').meta({
             description: 'Which of its runs are worth a turn of the session: "success" only a run that finished green, "failures" only one that finished badly, "completed" either, "all" every transition including queued and in progress.',
           }),
+          instructions: z
+            .string()
+            .trim()
+            .min(1)
+            .max(1000)
+            .optional()
+            .meta({
+              description:
+                'Your own instructions for what to do when a run of this workflow wakes the session. They replace the wording the plugin would have written for it; the line naming the workflow and its state, and the rules every event carries, stay either way. One line is one instruction. May name {{workflow}}, {{state}}, {{conclusion}}, {{repo}}, {{pr}}, {{head}}, {{run_id}} and {{run_url}}; one with no value for this run renders as nothing, so phrase the line to read without it. Delivered as an instruction because you wrote it, unlike anything that came from GitHub.',
+              'x-multiline': true,
+            }),
         }),
       )
       .default([])
@@ -210,6 +227,16 @@ export const ConfigSchema = z
         });
       }
       seen.add(entry.name);
+      const unknown = entry.instructions === undefined ? [] : unknownPlaceholders(entry.instructions);
+      if (unknown.length > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['events', 'workflows', index, 'instructions'],
+          message:
+            `unknown placeholder ${unknown.map((name) => `"{{${name}}}"`).join(', ')}; ` +
+            `expected one of ${WORKFLOW_PLACEHOLDERS.map((name) => `{{${name}}}`).join(', ')}`,
+        });
+      }
     });
     if (config.authors.mode === 'listed' && config.authors.allow.length === 0) {
       ctx.addIssue({

@@ -300,6 +300,7 @@ export class Tracking {
       botComments: settings.botComments,
       botAuthors: settings.botAuthors,
       workflowNames: settings.workflowNames,
+      workflowInstructions: settings.workflowInstructions,
       logger: this.#log,
       now: this.#now,
       onTerminal: (action) => {
@@ -713,7 +714,9 @@ function filtersLine(settings: EffectiveSettings): string {
     `filters: ci_events=${settings.policy.checks.wake} (${settings.origins.ciEvents})`,
     `comment_authors=${authors} (${authorsOrigin})`,
     `bot_comments=${botComments(settings)} (${settings.origins.botComments})`,
-    `workflows=[${[...settings.policy.workflows].map(([name, wake]) => `${name}:${wake}`).join(', ')}] (file)`,
+    `workflows=[${[...settings.policy.workflows]
+      .map(([name, wake]) => `${name}:${wake}${settings.workflowInstructions.has(name) ? ' +instructions' : ''}`)
+      .join(', ')}] (file)`,
   ].join(', ');
 }
 

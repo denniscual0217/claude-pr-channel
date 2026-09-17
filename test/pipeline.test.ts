@@ -5,7 +5,7 @@ import { DEFAULT_CONFIG, resolveTracking } from '../src/config.js';
 import { DeliveryDeduper } from '../src/events/dedupe.js';
 import { HeadTracker } from '../src/events/head.js';
 import type { LogLevel } from '../src/log.js';
-import { UNTRUSTED_TEXT_NOTICE } from '../src/types.js';
+import { operatorAuthored, UNTRUSTED_TEXT_NOTICE } from '../src/types.js';
 import {
   FIXTURE_DEPLOY_WORKFLOW,
   FIXTURE_HEAD_SHA,
@@ -58,6 +58,8 @@ interface HarnessOptions {
   readonly ciEvents?: 'completed' | 'failures' | 'all';
   readonly policy?: Partial<DeliveryPolicy>;
   readonly watchWorkflow?: string | null;
+  // Operator-written instructions for watchWorkflow, as a config file would carry them.
+  readonly instructions?: string;
 }
 
 function harness(options: HarnessOptions = {}): Harness {
@@ -94,6 +96,11 @@ function harness(options: HarnessOptions = {}): Harness {
     botComments: 'handle',
     botAuthors: null,
     workflowNames: new Set(options.watchWorkflow === null || options.watchWorkflow === undefined ? [] : [options.watchWorkflow]),
+    workflowInstructions: new Map(
+      options.watchWorkflow == null || options.instructions === undefined
+        ? []
+        : [[options.watchWorkflow, operatorAuthored(options.instructions)]],
+    ),
     logger: (level, event, fields = {}) => logs.push({ level, event, fields }),
     onTerminal: (action) => terminals.push(action),
   });
@@ -162,6 +169,33 @@ describe('delivery into the session', () => {
     expect(h.kinds()).toEqual(['pr_review', 'pr_review_comment', 'workflow']);
     expect(h.pushed.at(-1)!.content).toContain(FIXTURE_DEPLOY_WORKFLOW);
     expect(h.pushed.every((event) => !event.stale)).toBe(true);
+  });
+
+  // The operator's own text for that workflow, delivered instead of the plugin's wording.
+  it('carries a watched workflow\'s instructions through in place of the default wording', async () => {
+    const h = harness({
+      watchWorkflow: FIXTURE_DEPLOY_WORKFLOW,
+      policy: { workflows: new Map([[FIXTURE_DEPLOY_WORKFLOW, 'success']]) },
+      instructions: 'Pull the image for {{head}} and verify the change against it',
+    });
+
+    await h.deliver('workflowRun');
+
+    const content = h.pushed.at(-1)!.content;
+    expect(content).toContain(`- Pull the image for ${FIXTURE_HEAD_SHA} and verify the change against it`);
+    expect(content).toContain(`Workflow "${FIXTURE_DEPLOY_WORKFLOW}"`);
+    expect(content).not.toContain('so what it produces is ready');
+  });
+
+  it('leaves the same delivery untouched when no instructions are configured', async () => {
+    const h = harness({
+      watchWorkflow: FIXTURE_DEPLOY_WORKFLOW,
+      policy: { workflows: new Map([[FIXTURE_DEPLOY_WORKFLOW, 'success']]) },
+    });
+
+    await h.deliver('workflowRun');
+
+    expect(h.pushed.at(-1)!.content).toContain('so what it produces is ready');
   });
 
   // The README and the track skill both promise a failed run never reaches the session.

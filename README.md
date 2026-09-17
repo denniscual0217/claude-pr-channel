@@ -144,6 +144,10 @@ workflow's own `name:`, not a job's; `wake` is `failures`, `success`, `completed
 }
 ```
 
+An entry can also carry `instructions`: your own text for what to do when that workflow's
+run arrives, in place of the plugin's own wording — see
+[docs/configuration.md](docs/configuration.md#workflows).
+
 **Let someone else's comments drive it.** Only your own do by default — acting on a
 comment means pushing code. List yourself too, or you drop off.
 

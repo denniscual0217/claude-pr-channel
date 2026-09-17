@@ -5,7 +5,7 @@ import { ConfigSchema, NULLABLE_PATHS, TRACK_INPUT_KEYS, TrackInputSchema, confi
 import type { CiEvents, DeliveryPolicy, WorkflowWake } from './channel/filter.js';
 import type { TrackInput } from './channel/tracking.js';
 import type { BotComments } from './events/normalize.js';
-import type { PrLifecycleAction } from './types.js';
+import { operatorAuthored, type OperatorText, type PrLifecycleAction } from './types.js';
 
 export type AuthorsMode = 'operator' | 'listed' | 'anyone';
 
@@ -24,7 +24,11 @@ export interface Config {
     readonly reviews: { readonly enabled: boolean };
     readonly reviewComments: { readonly enabled: boolean };
     readonly checks: { readonly enabled: boolean; readonly wake: CiEvents };
-    readonly workflows: readonly { readonly name: string; readonly wake: WorkflowWake }[];
+    readonly workflows: readonly {
+      readonly name: string;
+      readonly wake: WorkflowWake;
+      readonly instructions?: string | undefined;
+    }[];
     readonly lifecycle: Readonly<Record<PrLifecycleAction, boolean>>;
   };
   readonly authors: {
@@ -346,6 +350,9 @@ export interface EffectiveSettings {
   // null means every bot, subject to botComments. Only a 'listed' setting names a set.
   readonly botAuthors: ReadonlySet<string> | null;
   readonly workflowNames: ReadonlySet<string>;
+  // Keyed by workflow name, for the workflows whose entry carries instructions. Kept out
+  // of DeliveryPolicy: that map decides waking, this one decides wording.
+  readonly workflowInstructions: ReadonlyMap<string, OperatorText>;
   readonly limits: Config['limits'];
   readonly cache: Config['cache'];
   readonly origins: {
@@ -393,6 +400,12 @@ export function resolveTracking(config: Config, input: TrackInput, ghLogin: stri
     botComments,
     botAuthors: botComments === 'listed' ? new Set(config.authors.allowBots) : null,
     workflowNames: new Set(events.workflows.map((entry) => entry.name)),
+    // The one place operator-authored text is branded, and it is fed only from the file.
+    workflowInstructions: new Map(
+      events.workflows.flatMap((entry) =>
+        entry.instructions === undefined ? [] : [[entry.name, operatorAuthored(entry.instructions)] as const],
+      ),
+    ),
     limits: config.limits,
     cache: config.cache,
     origins: {

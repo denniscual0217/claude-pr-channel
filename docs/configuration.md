@@ -150,6 +150,58 @@ time the shard count changes.
 
 An empty list watches nothing, so there is no separate on/off switch to contradict it.
 
+**Telling the session what to do.** An entry may carry `instructions`: your own text for
+what to do when one of that workflow's runs wakes the session.
+
+```json
+{
+  "events": {
+    "workflows": [
+      {
+        "name": "CI",
+        "wake": "failures",
+        "instructions": "Check the shared test setup first — if the failure is there, fix it once rather than per spec.\nNever retry the run to make it pass."
+      }
+    ]
+  }
+}
+```
+
+It replaces the wording the plugin would have written for that workflow's events. What
+stays either way: the line naming the workflow, its state and its run, and the rules every
+event carries — act now, one comment in one place, never invent a link. You are writing
+what to do about this run, not the guardrails around it.
+
+One line is one instruction. A blank line is dropped.
+
+The text applies to every run the workflow wakes for, not only failures — under
+`wake: "all"` a queued run renders it too, so either write for that or narrow `wake`.
+
+A line may name any of these, and the value for this run is substituted in:
+
+| Placeholder | Value | When it has none |
+| --- | --- | --- |
+| `{{workflow}}` | the workflow's name as configured | always set |
+| `{{state}}` | `queued`, `in_progress`, `completed`, … | always set |
+| `{{conclusion}}` | `success`, `failure`, `cancelled`, … | empty while the run is unfinished |
+| `{{repo}}` | `owner/name` | always set |
+| `{{pr}}` | the PR number | always set |
+| `{{head}}` | the commit the run was for | always set |
+| `{{run_id}}` | the run's numeric id | always set |
+| `{{run_url}}` | the run's page on GitHub | empty when the delivery carried none |
+
+A placeholder with no value substitutes to nothing, so phrase the line to read without it:
+`The run page, if any: {{run_url}}` rather than `Open {{run_url}} and read the log`. A line
+left empty by its placeholders is dropped rather than delivered blank. A name that is not
+in the table is a config error at load time, not a literal `{{typo}}` in the prompt.
+
+At most 1000 characters. The text every event carries is short on purpose — the session
+has to read it before it can act.
+
+Unlike a comment, a review or a PR title, this text is not fenced as untrusted: you wrote
+it in your own config file, so it is delivered as a real instruction. Nothing that arrives
+from GitHub can reach that slot.
+
 ### Lifecycle actions
 
 All 22 of GitHub's pull-request actions are individually switchable under
@@ -220,6 +272,7 @@ reported at once, naming the key, what was wrong, and what was expected:
 ```
 events.lifecycle: unknown key "labled"; known keys: opened, synchronize, …
 limits.maxPayloadBytes: 0 is too small; expected an integer >= 1
+events.workflows.0.instructions: unknown placeholder "{{typo}}"; expected one of {{workflow}}, {{state}}, …
 ```
 
 A tool argument is checked against the same definition and refused the same way.

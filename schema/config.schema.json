@@ -104,6 +104,13 @@
                   "completed",
                   "all"
                 ]
+              },
+              "instructions": {
+                "description": "Your own instructions for what to do when a run of this workflow wakes the session. They replace the wording the plugin would have written for it; the line naming the workflow and its state, and the rules every event carries, stay either way. One line is one instruction. May name {{workflow}}, {{state}}, {{conclusion}}, {{repo}}, {{pr}}, {{head}}, {{run_id}} and {{run_url}}; one with no value for this run renders as nothing, so phrase the line to read without it. Delivered as an instruction because you wrote it, unlike anything that came from GitHub.",
+                "x-multiline": true,
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
               }
             },
             "required": [

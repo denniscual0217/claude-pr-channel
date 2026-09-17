@@ -37,7 +37,8 @@
     font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px;
     background: var(--paper); color: var(--ink); min-width: 210px;
   }
-  textarea { width: 100%; font-family: var(--mono); font-size: 13px; min-height: 300px; }
+  #text { width: 100%; font-family: var(--mono); font-size: 13px; min-height: 300px; }
+  .objtext { min-width: 320px; resize: vertical; }
   input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); }
   .bar { position: sticky; bottom: 0; background: var(--paper); border-top: 1px solid var(--line);
          padding: 12px 0; display: flex; gap: 10px; align-items: center; }
@@ -205,6 +206,12 @@
             field.append(el);
           }
           field.value = entry?.[key] ?? sub.default ?? sub.enum[0];
+        } else if (sub['x-multiline']) {
+          field = document.createElement('textarea');
+          field.className = 'objtext';
+          field.rows = 4;
+          field.placeholder = required.has(key) ? 'required' : '';
+          field.value = entry?.[key] ?? sub.default ?? '';
         } else {
           field = document.createElement('input');
           field.type = 'text';
@@ -212,6 +219,7 @@
           field.value = entry?.[key] ?? sub.default ?? '';
         }
         field.dataset.field = key;
+        field.dataset.required = String(required.has(key));
         if (sub.description) field.title = sub.description;
         cell.append(name, field);
         row.append(cell);
@@ -246,7 +254,12 @@
       if (kind === 'objects') {
         value = [...input.querySelectorAll('.objrow')].map((row) => {
           const entry = {};
-          for (const field of row.querySelectorAll('[data-field]')) entry[field.dataset.field] = field.value.trim();
+          // An optional field left blank is omitted, not written as "": the loader refuses
+          // an empty string, so saving one would make the file it just wrote unloadable.
+          for (const field of row.querySelectorAll('[data-field]')) {
+            const text = field.value.trim();
+            if (text !== '' || field.dataset.required === 'true') entry[field.dataset.field] = text;
+          }
           return entry;
         });
       }

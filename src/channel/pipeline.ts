@@ -6,7 +6,7 @@ import type { BotComments } from '../events/normalize.js';
 import { normalizeWebhookAll } from '../events/normalize.js';
 import type { Logger } from '../log.js';
 import { noopLogger } from '../log.js';
-import type { EventEnvelope, PrEvent, PrRef, TerminalLifecycleAction } from '../types.js';
+import type { EventEnvelope, OperatorText, PrEvent, PrRef, TerminalLifecycleAction } from '../types.js';
 import { isTerminalLifecycleAction, prKey } from '../types.js';
 import type { DeliveryHeaders } from '../webhook/listener.js';
 import { describeEvent } from './describe.js';
@@ -34,6 +34,7 @@ export interface PipelineOptions {
   readonly botComments: BotComments;
   readonly botAuthors: ReadonlySet<string> | null;
   readonly workflowNames: ReadonlySet<string>;
+  readonly workflowInstructions: ReadonlyMap<string, OperatorText>;
   readonly logger?: Logger;
   readonly now?: () => Date;
   // Called after the terminal event has been handed to the session, so tracking can stop.
@@ -153,7 +154,10 @@ export function createPipeline(options: PipelineOptions): Pipeline {
     try {
       await options.notifier.notification({
         method: 'notifications/claude/channel',
-        params: { content: renderEventPrompt(delivered), meta: eventMeta(delivered) },
+        params: {
+          content: renderEventPrompt(delivered, { workflowInstructions: options.workflowInstructions }),
+          meta: eventMeta(delivered),
+        },
       });
     } catch (error) {
       // There is no queue: a push that fails is counted and logged, never retried.

@@ -1,5 +1,20 @@
-import type { CheckState, EventEnvelope, PrRef, UntrustedGithubText, WorkflowRunState } from '../types.js';
-import { untrusted } from '../types.js';
+import type {
+  CheckState,
+  EventEnvelope,
+  OperatorText,
+  PrRef,
+  UntrustedGithubText,
+  WorkflowEvent,
+  WorkflowPlaceholder,
+  WorkflowRunState,
+} from '../types.js';
+import { PLACEHOLDER_PATTERN, untrusted } from '../types.js';
+
+export interface PromptContext {
+  readonly workflowInstructions: ReadonlyMap<string, OperatorText>;
+}
+
+const EMPTY_CONTEXT: PromptContext = { workflowInstructions: new Map() };
 
 const NEEDS_ATTENTION = new Set(['failure', 'timed_out', 'action_required', 'startup_failure']);
 
@@ -25,6 +40,41 @@ function fence(id: string, label: string, text: UntrustedGithubText): string {
     text.text,
     `--- end untrusted ${id} ---`,
   ].join('\n');
+}
+
+// The mirror image of fence(): operator-authored text, delivered as the instruction it is.
+// The parameter type is the guard — nothing that came from GitHub carries this brand, so a
+// PR body or a branch name cannot be routed here without failing to compile.
+// Lines are split before substitution, never after: a value carrying a newline would
+// otherwise become a bullet of its own, and a bullet is an instruction. Nothing supplies
+// one today — a head sha is 40 hex from an HMAC-verified payload — but the operator text
+// is the one slot in this file that renders unfenced, so it must not depend on the shape
+// of a value GitHub chose.
+function instruct(template: OperatorText, values: Record<WorkflowPlaceholder, string | null>): string[] {
+  return template.text
+    .split('\n')
+    .map((line) =>
+      line
+        .replace(PLACEHOLDER_PATTERN, (match, name: string) =>
+          Object.hasOwn(values, name) ? values[name as WorkflowPlaceholder] ?? '' : match,
+        )
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter((line) => line !== '');
+}
+
+function workflowValues(event: WorkflowEvent): Record<WorkflowPlaceholder, string | null> {
+  return {
+    workflow: event.workflowName,
+    state: event.state.status,
+    conclusion: event.state.status === 'completed' ? event.state.conclusion : null,
+    repo: event.prRef.repo,
+    pr: String(event.prRef.prNumber),
+    head: event.headSha,
+    run_id: String(event.workflowRunId),
+    run_url: event.htmlUrl,
+  };
 }
 
 // Every reply the session posts on GitHub is attributed, so a human reading the PR can
@@ -79,7 +129,7 @@ function linkBack(url: string | null): string[] {
       ];
 }
 
-function body(envelope: EventEnvelope): string[] {
+function body(envelope: EventEnvelope, context: PromptContext): string[] {
   const event = envelope.payload;
   const { repo, prNumber } = event.prRef;
   const where = `${repo}#${prNumber}`;
@@ -138,10 +188,14 @@ function body(envelope: EventEnvelope): string[] {
           : 'No action needed unless it blocks your current step.',
       ];
 
-    case 'workflow':
-      return [
+    case 'workflow': {
+      const header =
         `Workflow "${event.workflowName}" on ${where} is ${describeState(event.state)} for head ${event.headSha} ` +
-          `(run ${event.workflowRunId}, attempt ${event.runAttempt}).`,
+        `(run ${event.workflowRunId}, attempt ${event.runAttempt}).`;
+      const custom = context.workflowInstructions.get(event.workflowName);
+      if (custom !== undefined) return [header, respond(instruct(custom, workflowValues(event)))];
+      return [
+        header,
         ...(event.state.status !== 'completed'
           ? [`The "${event.workflowName}" run has not finished, so there is nothing to act on yet. Carry on with what you were doing.`]
           : needsAttention(event.state)
@@ -162,6 +216,7 @@ function body(envelope: EventEnvelope): string[] {
                   'is expected for a run that went green.',
               ]),
       ];
+    }
 
     case 'pr_lifecycle':
       return [
@@ -174,12 +229,12 @@ function body(envelope: EventEnvelope): string[] {
   }
 }
 
-export function renderEventPrompt(envelope: EventEnvelope): string {
+export function renderEventPrompt(envelope: EventEnvelope, context: PromptContext = EMPTY_CONTEXT): string {
   const stale = envelope.stale
     ? [
         `This refers to head ${envelope.headSha ?? 'unknown'}, which is no longer this PR's current head.`,
         'Treat it as history, not as a signal about the code you are working on now. Do not reply to it.',
       ]
     : [];
-  return ['[pr-channel]', ...body(envelope), ...stale].join('\n\n');
+  return ['[pr-channel]', ...body(envelope, context), ...stale].join('\n\n');
 }

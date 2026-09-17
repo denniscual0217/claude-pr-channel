@@ -41,6 +41,48 @@ export function untrusted(text: string): UntrustedGithubText {
   return { untrusted: true, text };
 }
 
+// The third kind of text the session is handed: written by the operator in their own
+// config file, so it is delivered as a real instruction and never fenced. The key differs
+// from UntrustedGithubText's so neither brand is assignable to the other — nothing that
+// arrived from GitHub can be wrapped in this one.
+export interface OperatorText {
+  readonly operator: true;
+  readonly text: string;
+}
+
+export function operatorAuthored(text: string): OperatorText {
+  return { operator: true, text };
+}
+
+// What a per-workflow instruction template may name. The renderer's value map is keyed by
+// this list, so a placeholder accepted at load time always has something to substitute.
+export const WORKFLOW_PLACEHOLDERS = [
+  'workflow',
+  'state',
+  'conclusion',
+  'repo',
+  'pr',
+  'head',
+  'run_id',
+  'run_url',
+] as const;
+export type WorkflowPlaceholder = (typeof WORKFLOW_PLACEHOLDERS)[number];
+
+// Exact lowercase names, no whitespace inside the braces. An unclosed "{{foo" is left
+// alone: it is not a template attempt.
+export const PLACEHOLDER_PATTERN = /\{\{([^{}]*)\}\}/g;
+
+const KNOWN: ReadonlySet<string> = new Set(WORKFLOW_PLACEHOLDERS);
+
+export function unknownPlaceholders(template: string): string[] {
+  const found = new Set<string>();
+  for (const match of template.matchAll(PLACEHOLDER_PATTERN)) {
+    const name = match[1] ?? '';
+    if (!KNOWN.has(name)) found.add(name);
+  }
+  return [...found];
+}
+
 // The actions a session is woken for out of the box: they change what the code under
 // review is, or whether the PR is still alive.
 export const CORE_LIFECYCLE_ACTIONS = [

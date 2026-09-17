@@ -171,6 +171,40 @@ describe('a config that cannot be used', () => {
     );
   });
 
+  it('keeps the operator\'s instructions for a workflow, trimmed, and absent when unwritten', () => {
+    const withText = loaded('{"events": {"workflows": [{"name": "CI", "instructions": "  Fix the shared setup once.\\nNever retry the run.  "}]}}');
+    expect(withText.events.workflows[0]!.instructions).toBe('Fix the shared setup once.\nNever retry the run.');
+
+    const without = loaded('{"events": {"workflows": [{"name": "CI"}]}}');
+    expect('instructions' in (without.events.workflows[0] as object)).toBe(false);
+  });
+
+  it('refuses a placeholder the renderer has no value for, naming the ones it has', () => {
+    expect(problem('{"events": {"workflows": [{"name": "CI", "instructions": "Read {{Workflow}} now"}]}}')).toBe(
+      'events.workflows.0.instructions: unknown placeholder "{{Workflow}}"; expected one of ' +
+        '{{workflow}}, {{state}}, {{conclusion}}, {{repo}}, {{pr}}, {{head}}, {{run_id}}, {{run_url}}',
+    );
+    // Every bad entry is named, not just the first.
+    expect(
+      problem('{"events": {"workflows": [{"name": "CI", "instructions": "{{sha}}"}, {"name": "Build", "instructions": "{{url}}"}]}}').split('\n'),
+    ).toHaveLength(2);
+    // An unclosed brace is not a template attempt, so it is left alone.
+    expect(loaded('{"events": {"workflows": [{"name": "CI", "instructions": "mind the {{gap"}]}}').events.workflows[0]!.instructions).toBe(
+      'mind the {{gap',
+    );
+  });
+
+  it('caps the instructions, so the prompt every event carries stays short', () => {
+    expect(problem(JSON.stringify({ events: { workflows: [{ name: 'CI', instructions: 'x'.repeat(1001) }] } }))).toContain(
+      'is too long; expected at most 1000 characters',
+    );
+    expect(loaded(JSON.stringify({ events: { workflows: [{ name: 'CI', instructions: 'x'.repeat(1000) }] } })).events.workflows[0]!.instructions)
+      .toHaveLength(1000);
+    expect(problem('{"events": {"workflows": [{"name": "CI", "instructions": "   "}]}}')).toBe(
+      'events.workflows.0.instructions: "   " is too short; expected at least 1 character',
+    );
+  });
+
   it('refuses the listed author mode with nobody listed', () => {
     expect(problem('{"authors": {"mode": "listed"}}')).toBe(
       'authors.allow: required when authors.mode is "listed"; expected at least one GitHub login',
@@ -291,6 +325,26 @@ describe('resolveTracking', () => {
     expect(resolveTracking(listed, {}, null).policy.workflows.get('Ship It')).toBe('success');
     expect([...resolveTracking(DEFAULT_CONFIG, {}, null).workflowNames]).toEqual([]);
     expect(resolveTracking(DEFAULT_CONFIG, {}, null).policy.workflows.size).toBe(0);
+  });
+
+  it('carries the instructions only for the workflows that wrote them, branded as the operator\'s', () => {
+    const some: Config = {
+      ...DEFAULT_CONFIG,
+      events: {
+        ...DEFAULT_CONFIG.events,
+        workflows: [
+          { name: 'Build Image', wake: 'success', instructions: 'Pull the image for {{head}}' },
+          { name: 'Nightly Bench', wake: 'failures' },
+        ],
+      },
+    };
+    const settings = resolveTracking(some, {}, null);
+
+    expect(settings.workflowInstructions.get('Build Image')).toEqual({ operator: true, text: 'Pull the image for {{head}}' });
+    expect(settings.workflowInstructions.has('Nightly Bench')).toBe(false);
+    expect(resolveTracking(DEFAULT_CONFIG, {}, null).workflowInstructions.size).toBe(0);
+    // The wake map is untouched by any of this: it decides waking, not wording.
+    expect(settings.policy.workflows.get('Build Image')).toBe('success');
   });
 
   it('keeps the wake value each workflow was given', () => {
