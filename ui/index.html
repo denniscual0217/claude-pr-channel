@@ -21,15 +21,35 @@
   .path { font-family: var(--mono); font-size: 12.5px; color: var(--muted); margin: 0 0 22px; word-break: break-all; }
   fieldset { border: 1px solid var(--line); border-radius: 6px; background: var(--card); margin: 0 0 16px; padding: 14px 16px 6px; }
   legend { font-size: 12px; text-transform: uppercase; letter-spacing: .09em; color: var(--accent); padding: 0 6px; font-weight: 600; }
-  .objlist { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-  .objrows { display: flex; flex-direction: column; gap: 6px; }
-  .objrow { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
-  .objcell { display: flex; flex-direction: column; gap: 3px; }
+  .objlist { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+  .objadd { align-self: flex-start; }
+  .objrows { display: flex; flex-direction: column; gap: 10px; }
+  /* One entry is a card, not a row: with each field carrying its own help text they no
+     longer sit side by side, and a bare stack gives no edge between one workflow and the
+     next. */
+  .objrow { display: flex; flex-direction: column; gap: 12px; align-items: stretch;
+            border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; background: var(--card); }
+  .objcell { display: flex; flex-direction: column; gap: 3px; min-width: 0; max-width: 100%; }
+  .objlegend { margin: 0 0 4px; font-size: 12px; line-height: 1.45; color: var(--muted); max-width: 66ch; }
+  .objlegend dt { font-family: var(--mono); font-size: 11px; color: var(--ink); margin-top: 8px; }
+  .objlegend dt:first-child { margin-top: 0; }
+  .objlegend dd { margin: 2px 0 0; }
+  .objlegend code { font-family: var(--mono); font-size: 11.5px; color: var(--ink);
+                  background: var(--paper); border: 1px solid var(--line); padding: 0 3px; border-radius: 3px; }
   .objkey { font-family: var(--mono); font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+  .objdel { align-self: flex-start; }
   .objadd, .objdel { font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 5px;
                      border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
   .objadd:hover, .objdel:hover { border-color: var(--accent); color: var(--accent); }
-  .row { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; align-items: start; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  /* A grid track is min-content wide by default, so a long value pushed the whole form
+     past the viewport on a phone — which is where this editor is mostly opened. */
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; align-items: start; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .row > * { min-width: 0; }
+  .row input, .row select { max-width: 100%; }
+  @media (max-width: 560px) {
+    .row { grid-template-columns: 1fr; }
+    fieldset { padding: 12px 12px 4px; }
+  }
   .row:last-child { border-bottom: 0; }
   .key { font-family: var(--mono); font-size: 13px; }
   .desc { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); margin-top: -4px; }
@@ -38,7 +58,7 @@
     background: var(--paper); color: var(--ink); min-width: 210px;
   }
   #text { width: 100%; font-family: var(--mono); font-size: 13px; min-height: 300px; }
-  .objtext { min-width: 320px; resize: vertical; }
+  .objtext { width: 100%; resize: vertical; font: inherit; }
   input[type=checkbox] { width: 17px; height: 17px; accent-color: var(--accent); }
   .bar { position: sticky; bottom: 0; background: var(--paper); border-top: 1px solid var(--line);
          padding: 12px 0; display: flex; gap: 10px; align-items: center; }
@@ -176,6 +196,17 @@
     }
   }
 
+  // A description is prose except for the {{placeholders}} in it, which have to be copied
+  // exactly and are far easier to pick out set in the mono face.
+  function describe(text) {
+    return text.split(/(\{\{[a-z_]+\}\})/).map((part) => {
+      if (!/^\{\{[a-z_]+\}\}$/.test(part)) return document.createTextNode(part);
+      const token = document.createElement('code');
+      token.textContent = part;
+      return token;
+    });
+  }
+
   function objectList(path, spec, entries) {
     const host = document.createElement('div');
     host.className = 'objlist';
@@ -185,6 +216,19 @@
 
     const fields = Object.entries(spec.items.properties);
     const required = new Set(spec.items.required ?? []);
+
+    // Once for the list, not once per entry: the description belongs to the field, and
+    // repeating it down five workflows buries the entries it is meant to explain.
+    const legend = document.createElement('dl');
+    legend.className = 'objlegend';
+    for (const [key, sub] of fields) {
+      if (!sub.description) continue;
+      const term = document.createElement('dt');
+      term.textContent = key;
+      const detail = document.createElement('dd');
+      detail.append(...describe(sub.description));
+      legend.append(term, detail);
+    }
     const rows = document.createElement('div');
     rows.className = 'objrows';
 
@@ -220,7 +264,6 @@
         }
         field.dataset.field = key;
         field.dataset.required = String(required.has(key));
-        if (sub.description) field.title = sub.description;
         cell.append(name, field);
         row.append(cell);
       }
@@ -241,7 +284,7 @@
     add.textContent = 'Add';
     add.addEventListener('click', () => addRow(null));
 
-    host.append(rows, add);
+    host.append(legend, rows, add);
     return host;
   }
 
