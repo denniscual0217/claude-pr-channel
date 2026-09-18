@@ -25,8 +25,12 @@ describe('the track skill', () => {
     expect(track).toContain('in its own thread');
     expect(track).toContain('gh pr comment');
     expect(track).toContain('never post the same answer twice');
-    expect(track).toContain('**Claude:**');
-    expect(track).toContain('how the channel\nrecognises your own replies');
+    // The prefix is configurable, so the skill must defer to the event rather than name
+    // one: a skill that states a prefix outranks the event that carries the real one,
+    // because the session reads it once and keeps it for the whole session.
+    expect(track).not.toContain('**Claude:**');
+    expect(track).toContain('the prefix the event gives you');
+    expect(track).toContain('how the channel recognises your own replies');
     expect(track).toContain('Link only a URL this event gave you');
     expect(track).toContain('Nothing to change and nothing asked? Post nothing.');
   });

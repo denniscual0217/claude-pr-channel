@@ -115,9 +115,10 @@ explanation they asked for, or a caveat they need.
 Link only a URL this event gave you, pasted exactly; if it gave none, link nothing. A
 thread reply needs no link.
 
-Every comment begins with **Claude:** in bold — that prefix is how the channel
-recognises your own replies and refuses to hand them back, so dropping it makes this
-session answer itself.
+Every comment begins with the prefix the event gives you, written exactly as shown there
+— it is how the channel recognises your own replies and refuses to hand them back, so
+dropping it or altering it makes this session answer itself. The repository chooses it,
+so do not carry one over from an earlier session or assume the default.
 
 Nothing to change and nothing asked? Post nothing.
 
